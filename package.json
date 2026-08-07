@@ -1,0 +1,28 @@
+{
+  "name": "ts-base",
+  "private": true,
+  "type": "module",
+  "module": "src/index.ts",
+  "scripts": {
+    "fix": "oxlint --fix && pnpm run format",
+    "format": "oxfmt",
+    "preinstall": "npx only-allow pnpm",
+    "postinstall": "git config core.hooksPath .githooks",
+    "lint": "eslint && oxlint",
+    "precommit": "pnpm run fix && eslint"
+  },
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "eslint": "catalog:",
+    "eslint-plugin-oxlint": "catalog:",
+    "lint-staged": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "sort-package-json": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:"
+  },
+  "packageManager": "pnpm@11.1.1"
+}
