@@ -4,10 +4,10 @@ import tseslint from "typescript-eslint";
 
 export default defineConfig(
   {
-    ignores: ["dist/**"],
+    ignores: [".output/**", ".wxt/**"],
   },
   {
-    files: ["src/**/*.ts"],
+    files: ["entrypoints/**/*.ts"],
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: {
