@@ -1,8 +1,10 @@
 import { defineContentScript } from "wxt/utils/define-content-script";
 
+import { runFeatureRuntimes } from "../../src/featureRuntime";
+
 export default defineContentScript({
-  main() {
-    console.log("Hyper Twitch content script loaded.");
+  main(ctx) {
+    runFeatureRuntimes(ctx);
   },
   matches: ["*://*.twitch.tv/*"],
 });

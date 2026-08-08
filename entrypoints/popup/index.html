@@ -4,9 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Hyper Twitch</title>
-    <meta name="manifest.type" content="browser_action" />
+    <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <div id="app"></div>
+    <main class="popup-shell" id="app">
+      <header class="popup-header">
+        <h1>Hyper Twitch</h1>
+      </header>
+
+      <section aria-labelledby="features-heading" id="features">
+        <h2 class="visually-hidden" id="features-heading">Features</h2>
+        <div aria-live="polite" class="feature-list" id="feature-list"></div>
+        <div class="empty-state" id="empty-state">
+          <h2>No features yet</h2>
+          <p>Feature controls will appear here when features are added.</p>
+        </div>
+      </section>
+
+      <p aria-live="polite" class="status" id="status" role="status"></p>
+    </main>
+    <script src="./main.ts" type="module"></script>
   </body>
 </html>

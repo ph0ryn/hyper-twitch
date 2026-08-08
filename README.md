@@ -35,12 +35,30 @@ pnpm run dev
 | `pnpm run format` | Format the repository with oxfmt.            |
 | `pnpm run fix`    | Apply Oxlint fixes, then format the project. |
 
+## Feature toggles
+
+The registry in `src/features.ts` is the source of truth for feature metadata,
+popup controls, and stored settings. Keep feature IDs stable and camelCase.
+
+Each feature setting uses `local:features.<featureId>.enabled` and defaults to
+`false`. To add a feature, register its metadata and matching content runtime
+in `src/features.ts` and `src/featureRuntime.ts`. A runtime must implement
+`mount(ctx, signal)` and return a cleanup function. The shared runner applies
+the initial state, watches changes, and cleans up on disable, Twitch SPA
+navigation, or extension invalidation.
+
+The popup renders registered metadata automatically. Keep Twitch-side feature
+code out of the popup bundle; feature toggles use local storage directly, with
+no background service worker or message bus.
+
 ## Project Layout
 
 ```text
 .
+├── src/
+│   ├── featureRuntime.ts # Content feature lifecycle
+│   └── features.ts       # Shared feature metadata and settings
 ├── entrypoints/
-│   ├── background/     # Extension background service worker
 │   ├── content/        # Twitch content script
 │   └── popup/          # Extension popup
 ├── wxt.config.ts       # WXT and manifest configuration

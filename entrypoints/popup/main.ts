@@ -1,0 +1,116 @@
+import {
+  featureDefinitions,
+  getFeatureEnabledSetting,
+  type FeatureDefinition,
+} from "../../src/features";
+
+type FeatureId = keyof typeof featureDefinitions;
+type FeatureSetting = ReturnType<typeof getFeatureEnabledSetting>;
+
+const popupDocument = globalThis.document;
+const featureList = popupDocument.querySelector<HTMLElement>("#feature-list");
+const emptyState = popupDocument.querySelector<HTMLElement>("#empty-state");
+const status = popupDocument.querySelector<HTMLElement>("#status");
+
+if (!featureList || !emptyState || !status) {
+  throw new Error("Popup markup is missing required elements");
+}
+
+const statusElement = status;
+const entries = Object.entries(featureDefinitions) as [FeatureId, FeatureDefinition][];
+
+emptyState.hidden = entries.length > 0;
+
+for (const [featureId, definition] of entries) {
+  const { checkbox, setting } = createFeatureRow(featureId);
+
+  featureList.append(createFeatureRowElement(featureId, definition, checkbox));
+  void loadFeatureValue(checkbox, setting);
+}
+
+function createFeatureRow(featureId: FeatureId): {
+  checkbox: HTMLInputElement;
+  setting: FeatureSetting;
+} {
+  const checkbox = popupDocument.createElement("input");
+
+  checkbox.type = "checkbox";
+  checkbox.className = "feature-control";
+  checkbox.id = `feature-${String(featureId)}`;
+  checkbox.disabled = true;
+
+  const setting = getFeatureEnabledSetting(featureId);
+
+  checkbox.addEventListener("change", () => {
+    void saveFeatureValue(checkbox, setting);
+  });
+
+  return { checkbox, setting };
+}
+
+function createFeatureRowElement(
+  featureId: FeatureId,
+  definition: FeatureDefinition,
+  checkbox: HTMLInputElement,
+): HTMLElement {
+  const row = popupDocument.createElement("article");
+
+  row.className = "feature-row";
+
+  const content = popupDocument.createElement("div");
+
+  content.className = "feature-content";
+
+  const label = popupDocument.createElement("label");
+
+  label.className = "feature-label";
+  label.htmlFor = checkbox.id;
+  label.textContent = definition.label;
+
+  const description = popupDocument.createElement("p");
+
+  description.className = "feature-description";
+  description.id = `feature-${String(featureId)}-description`;
+  description.textContent = definition.description;
+
+  checkbox.setAttribute("aria-describedby", description.id);
+  content.append(label, description);
+  row.append(checkbox, content);
+
+  return row;
+}
+
+async function loadFeatureValue(checkbox: HTMLInputElement, setting: FeatureSetting) {
+  try {
+    checkbox.checked = (await setting.getValue()) === true;
+    checkbox.disabled = false;
+  } catch {
+    showError("Unable to load feature settings. Reopen the popup to try again.");
+  }
+}
+
+async function saveFeatureValue(checkbox: HTMLInputElement, setting: FeatureSetting) {
+  const nextValue = checkbox.checked;
+
+  checkbox.disabled = true;
+  clearStatus();
+
+  try {
+    await setting.setValue(nextValue);
+  } catch {
+    checkbox.checked = !nextValue;
+    showError("Unable to save this setting. Try again.");
+  } finally {
+    checkbox.disabled = false;
+  }
+}
+
+function clearStatus() {
+  statusElement.textContent = "";
+  statusElement.dataset.state = "";
+}
+
+function showError(message: string) {
+  statusElement.textContent = message;
+  statusElement.dataset.state = "error";
+}
