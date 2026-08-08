@@ -4,8 +4,11 @@ import {
   interpolateArchiveTime,
   interpolateStreamTime,
   streamTimeMessages,
+  type StreamTimeRequest,
   type StreamTimeAnchor,
   type StreamTimeSegment,
+  type StreamSyncReport,
+  type StreamSyncResponse,
 } from "./protocol";
 
 const APPEND_GRACE_MS = 200;
@@ -18,6 +21,8 @@ const SHARE_SELECTOR = 'button[data-a-target="share-button"], button[aria-label=
 const VOD_SHARE_SELECTOR =
   '[data-test-selector="metadata-layout__split-top"] button[aria-label="Share"]';
 const VIDEO_OPTIONS_SELECTOR = 'button[aria-label="Video Options"]';
+const SYNC_REWIND_THRESHOLD_SECONDS = 0.75;
+const SYNC_BUFFER_MARGIN_SECONDS = 0.25;
 
 const accessibleFormatter = new Intl.DateTimeFormat(undefined, {
   day: "2-digit",
@@ -64,6 +69,20 @@ interface ClockElements {
   timer: HTMLElement;
   visibleText: HTMLElement;
 }
+
+interface StreamTimeController {
+  mountSyncControls(signal: AbortSignal): () => void;
+}
+
+interface SharedStreamTimeRuntime {
+  cleanup: () => void;
+  controller: AbortController;
+  references: number;
+}
+
+let activeStreamTimeController: StreamTimeController | undefined = undefined;
+let sharedStreamTimeRuntime: SharedStreamTimeRuntime | undefined = undefined;
+let streamTimeDisplayReferences = 0;
 
 function findNativeLiveTime() {
   return [...globalThis.document.querySelectorAll<HTMLElement>(".live-time")].find(
@@ -219,8 +238,11 @@ function ensureClock(placement: ClockPlacement): ClockElements {
     root.className = placement.nativeWrapper.className;
     timer.className = placement.nativeTime.className;
 
-    if (root.parentElement !== placement.parent || root.nextElementSibling) {
-      placement.parent.append(root);
+    if (
+      root.parentElement !== placement.parent ||
+      root.previousElementSibling !== placement.nativeWrapper
+    ) {
+      placement.parent.insertBefore(root, placement.nativeWrapper.nextSibling);
     }
   } else {
     root.removeAttribute("class");
@@ -404,15 +426,15 @@ async function fetchArchiveStart(videoId: string, signal: AbortSignal) {
   }
 }
 
-async function sendMessage(type: string, sessionId: string) {
+async function sendMessage(message: StreamTimeRequest) {
   try {
-    return (await browser.runtime.sendMessage({ sessionId, type })) as unknown;
+    return (await browser.runtime.sendMessage(message)) as unknown;
   } catch {
     return null;
   }
 }
 
-export const streamTimeRuntime = {
+const streamTimeImplementation = {
   mount(ctx: ContentScriptContext, signal: AbortSignal) {
     let anchor: (StreamTimeAnchor & { url: string }) | undefined = undefined;
     let cleaned = false;
@@ -426,6 +448,15 @@ export const streamTimeRuntime = {
     let vodStartKey: string | undefined = undefined;
     let vodStartMs: number | null | undefined = undefined;
     let vodRequest: Promise<number | null> | undefined = undefined;
+    let syncButton: HTMLButtonElement | undefined = undefined;
+    let syncControlsMounted = false;
+    let syncJoinedAt: number | undefined = undefined;
+    let syncJoinedCurrentAbsoluteMs: number | undefined = undefined;
+    let syncRequested = false;
+    let syncRequestVersion = 0;
+    let syncRoot: HTMLElement | undefined = undefined;
+    let syncRootStyle: string | null | undefined = undefined;
+    let syncSignal: AbortSignal | undefined = undefined;
 
     const isInactive = () => cleaned || signal.aborted;
 
@@ -444,6 +475,338 @@ export const streamTimeRuntime = {
       vodRequest = undefined;
     };
 
+    const setSyncButtonState = (state: "buffering" | "sync" | "synced" | "waiting") => {
+      if (!syncButton) {
+        return;
+      }
+
+      const labels = {
+        buffering: "Buffering…",
+        sync: "Sync",
+        synced: "Synced",
+        waiting: "Waiting…",
+      } as const;
+
+      syncButton.textContent = labels[state];
+      syncButton.setAttribute("aria-pressed", String(syncRequested));
+
+      if (state === "sync") {
+        syncButton.title = "Sync live streams to the same moment";
+      } else {
+        syncButton.title = "Stop syncing live streams";
+      }
+    };
+
+    const restoreSyncRoot = () => {
+      if (!syncRoot) {
+        return;
+      }
+
+      if (syncRootStyle === null) {
+        syncRoot.removeAttribute("style");
+      } else if (syncRootStyle !== undefined) {
+        syncRoot.setAttribute("style", syncRootStyle);
+      }
+
+      syncRoot = undefined;
+      syncRootStyle = undefined;
+    };
+
+    const removeSyncButton = () => {
+      syncButton?.remove();
+      syncButton = undefined;
+      restoreSyncRoot();
+    };
+
+    const leaveSync = () => {
+      void sendMessage({ sessionId, type: streamTimeMessages.leaveSync });
+    };
+
+    const resetSyncState = () => {
+      if (syncRequested) {
+        syncRequestVersion += 1;
+        leaveSync();
+      }
+
+      syncRequested = false;
+      syncJoinedAt = undefined;
+      syncJoinedCurrentAbsoluteMs = undefined;
+      setSyncButtonState("sync");
+      removeSyncButton();
+    };
+
+    const onSyncButtonClick = () => {
+      if (!syncButton || !syncControlsMounted) {
+        return;
+      }
+
+      syncRequested = !syncRequested;
+      syncRequestVersion += 1;
+
+      if (syncRequested) {
+        setSyncButtonState("waiting");
+      } else {
+        leaveSync();
+        syncJoinedAt = undefined;
+        syncJoinedCurrentAbsoluteMs = undefined;
+        setSyncButtonState("sync");
+      }
+    };
+
+    const ensureSyncButton = (clock: ClockElements) => {
+      if (!syncControlsMounted) {
+        return;
+      }
+
+      if (syncButton?.parentElement !== clock.root) {
+        syncRequestVersion += 1;
+        removeSyncButton();
+        syncRoot = clock.root;
+        syncRootStyle = clock.root.getAttribute("style");
+
+        const button = globalThis.document.createElement("button");
+
+        button.type = "button";
+        button.dataset.hyperTwitchStreamSync = "";
+        button.setAttribute("aria-label", "Sync live streams to the same moment");
+        button.style.background = "transparent";
+        button.style.border = "0";
+        button.style.color = "inherit";
+        button.style.cursor = "pointer";
+        button.style.font = "inherit";
+        button.style.fontSize = "12px";
+        button.style.fontVariantNumeric = "tabular-nums";
+        button.style.lineHeight = "16px";
+        button.style.marginBlockStart = "2px";
+        button.style.minInlineSize = "10ch";
+        button.style.paddingBlock = "0px";
+        button.style.paddingInline = "4px";
+        button.addEventListener("click", onSyncButtonClick);
+
+        clock.root.append(button);
+        clock.root.style.alignItems = "center";
+        clock.root.style.display = "flex";
+        clock.root.style.flexDirection = "column";
+        syncButton = button;
+
+        if (syncRequested) {
+          setSyncButtonState("waiting");
+        } else {
+          setSyncButtonState("sync");
+        }
+      }
+    };
+
+    const findBufferedRange = (video: HTMLVideoElement, time: number) => {
+      try {
+        for (let index = 0; index < video.buffered.length; index += 1) {
+          const start = video.buffered.start(index);
+          const end = video.buffered.end(index);
+
+          if (start <= time && time <= end) {
+            return { end, start };
+          }
+        }
+      } catch {
+        return null;
+      }
+
+      return null;
+    };
+
+    const parseSyncResponse = (value: unknown): StreamSyncResponse | null => {
+      if (!value || typeof value !== "object" || !("status" in value)) {
+        return null;
+      }
+
+      const status = (value as { status?: unknown }).status;
+
+      if (status !== "waiting" && status !== "ready") {
+        return null;
+      }
+
+      return value as StreamSyncResponse;
+    };
+
+    const buildSyncReport = (video: HTMLVideoElement, streamAnchor: StreamTimeAnchor) => {
+      if (
+        video.paused ||
+        video.seeking ||
+        video.readyState < HAVE_FUTURE_DATA ||
+        !Number.isFinite(video.currentTime)
+      ) {
+        return null;
+      }
+
+      const range = findBufferedRange(video, video.currentTime);
+
+      if (!range) {
+        return null;
+      }
+
+      const bufferedStartAbsoluteMs = interpolateStreamTime(streamAnchor, range.start);
+      const bufferedEndAbsoluteMs = interpolateStreamTime(streamAnchor, range.end);
+      const currentAbsoluteMs = interpolateStreamTime(streamAnchor, video.currentTime);
+      const reportedAt = Date.now();
+
+      if (
+        !Number.isFinite(bufferedStartAbsoluteMs) ||
+        !Number.isFinite(bufferedEndAbsoluteMs) ||
+        !Number.isFinite(currentAbsoluteMs)
+      ) {
+        return null;
+      }
+
+      if (syncJoinedAt === undefined || syncJoinedCurrentAbsoluteMs === undefined) {
+        syncJoinedAt = reportedAt;
+        syncJoinedCurrentAbsoluteMs = currentAbsoluteMs;
+      }
+
+      return {
+        bufferedEndAbsoluteMs,
+        bufferedStartAbsoluteMs,
+        currentAbsoluteMs,
+        joinedAt: syncJoinedAt,
+        joinedCurrentAbsoluteMs: syncJoinedCurrentAbsoluteMs,
+        reportedAt,
+      } satisfies StreamSyncReport;
+    };
+
+    const applySyncTarget = (
+      video: HTMLVideoElement,
+      streamAnchor: StreamTimeAnchor,
+      targetAbsoluteMs: number,
+    ) => {
+      if (
+        video.paused ||
+        video.seeking ||
+        video.readyState < HAVE_METADATA ||
+        !Number.isFinite(video.currentTime) ||
+        !Number.isFinite(targetAbsoluteMs)
+      ) {
+        return "buffering" as const;
+      }
+
+      const targetMedia =
+        streamAnchor.mediaEnd + (targetAbsoluteMs - streamAnchor.absoluteEndMs) / 1_000;
+
+      if (!Number.isFinite(targetMedia)) {
+        return "buffering" as const;
+      }
+
+      if (targetMedia > video.currentTime + SYNC_REWIND_THRESHOLD_SECONDS) {
+        return "buffering" as const;
+      }
+
+      if (targetMedia >= video.currentTime - SYNC_REWIND_THRESHOLD_SECONDS) {
+        return "synced" as const;
+      }
+
+      const targetRange = findBufferedRange(video, targetMedia);
+
+      if (
+        !targetRange ||
+        targetMedia < targetRange.start + SYNC_BUFFER_MARGIN_SECONDS ||
+        targetMedia > targetRange.end - SYNC_BUFFER_MARGIN_SECONDS
+      ) {
+        return "buffering" as const;
+      }
+
+      try {
+        video.currentTime = targetMedia;
+      } catch {
+        return "buffering" as const;
+      }
+
+      return "synced" as const;
+    };
+
+    const updateSync = async (video: HTMLVideoElement, streamAnchor: StreamTimeAnchor) => {
+      if (!syncControlsMounted || !syncRequested || !syncButton || syncSignal?.aborted) {
+        return;
+      }
+
+      const requestButton = syncButton;
+      const requestSignal = syncSignal;
+      const requestVersion = syncRequestVersion;
+
+      const report = buildSyncReport(video, streamAnchor);
+
+      if (!report) {
+        setSyncButtonState("buffering");
+
+        return;
+      }
+
+      const response = await sendMessage({
+        report,
+        sessionId,
+        type: streamTimeMessages.updateSync,
+      });
+
+      if (
+        isInactive() ||
+        currentVideo !== video ||
+        currentMode?.kind !== "live" ||
+        syncButton !== requestButton ||
+        syncSignal !== requestSignal ||
+        syncRequestVersion !== requestVersion
+      ) {
+        return;
+      }
+
+      const parsed = parseSyncResponse(response);
+
+      if (!parsed || parsed.status === "waiting") {
+        setSyncButtonState("waiting");
+
+        return;
+      }
+
+      if (!Number.isFinite(parsed.targetAbsoluteMs)) {
+        setSyncButtonState("buffering");
+
+        return;
+      }
+
+      setSyncButtonState(applySyncTarget(video, streamAnchor, parsed.targetAbsoluteMs));
+    };
+
+    const mountSyncControls = (nextSignal: AbortSignal) => {
+      if (syncControlsMounted) {
+        return () => {};
+      }
+
+      syncControlsMounted = true;
+      syncSignal = nextSignal;
+      let detached = false;
+
+      const cleanup = () => {
+        if (detached) {
+          return;
+        }
+
+        detached = true;
+        nextSignal.removeEventListener("abort", cleanup);
+
+        if (syncSignal !== nextSignal) {
+          return;
+        }
+
+        resetSyncState();
+        syncControlsMounted = false;
+        syncSignal = undefined;
+      };
+
+      nextSignal.addEventListener("abort", cleanup, { once: true });
+
+      if (nextSignal.aborted) {
+        cleanup();
+      }
+
+      return cleanup;
+    };
+
     const unsubscribe = () => {
       if (!subscriptionRequested) {
         return;
@@ -454,10 +817,15 @@ export const streamTimeRuntime = {
       sessionId = globalThis.crypto.randomUUID();
       subscriptionRequested = false;
       subscribed = false;
-      void sendMessage(streamTimeMessages.unsubscribe, closedSessionId);
+
+      void sendMessage({
+        sessionId: closedSessionId,
+        type: streamTimeMessages.unsubscribe,
+      });
     };
 
     const deactivate = () => {
+      resetSyncState();
       unsubscribe();
       currentVideo = null;
       currentMode = undefined;
@@ -470,7 +838,10 @@ export const streamTimeRuntime = {
 
       subscriptionRequested = true;
 
-      const response = await sendMessage(streamTimeMessages.subscribe, requestedSessionId);
+      const response = await sendMessage({
+        sessionId: requestedSessionId,
+        type: streamTimeMessages.subscribe,
+      });
 
       if (
         isInactive() ||
@@ -479,7 +850,10 @@ export const streamTimeRuntime = {
         sessionId !== requestedSessionId
       ) {
         if (response !== null) {
-          void sendMessage(streamTimeMessages.unsubscribe, requestedSessionId);
+          void sendMessage({
+            sessionId: requestedSessionId,
+            type: streamTimeMessages.unsubscribe,
+          });
         }
 
         return false;
@@ -543,8 +917,15 @@ export const streamTimeRuntime = {
 
       try {
         const mode = findPlaybackMode();
-        const placement = findClockPlacement(mode.kind);
         const video = findVideo();
+
+        if (mode.kind === "vod" && streamTimeDisplayReferences === 0) {
+          deactivate();
+
+          return;
+        }
+
+        const placement = findClockPlacement(mode.kind);
 
         if (!placement || !video) {
           deactivate();
@@ -553,6 +934,7 @@ export const streamTimeRuntime = {
         }
 
         if (mode.kind === "vod" && vodStartKey === mode.key && vodStartMs === null) {
+          resetSyncState();
           removeClocks();
 
           return;
@@ -565,6 +947,8 @@ export const streamTimeRuntime = {
           currentMode.kind !== mode.kind;
 
         if (modeChanged || video !== currentVideo) {
+          resetSyncState();
+
           if (currentMode?.kind === "live" && mode.kind !== "live") {
             unsubscribe();
           }
@@ -581,6 +965,7 @@ export const streamTimeRuntime = {
           renderClock(clock);
 
           if (mode.kind === "live") {
+            ensureSyncButton(clock);
             subscribed = await subscribe(video);
 
             return;
@@ -588,10 +973,13 @@ export const streamTimeRuntime = {
         }
 
         if (mode.kind === "vod") {
+          resetSyncState();
           await updateVod(clock, mode, video);
 
           return;
         }
+
+        ensureSyncButton(clock);
 
         if (!subscribed) {
           renderClock(clock);
@@ -602,7 +990,10 @@ export const streamTimeRuntime = {
           }
         }
 
-        const response = await sendMessage(streamTimeMessages.getLatestSegment, sessionId);
+        const response = await sendMessage({
+          sessionId,
+          type: streamTimeMessages.getLatestSegment,
+        });
 
         if (isInactive() || currentVideo !== video || currentMode?.key !== mode.key) {
           return;
@@ -642,16 +1033,25 @@ export const streamTimeRuntime = {
         if (!anchor || video.readyState < HAVE_FUTURE_DATA || !Number.isFinite(video.currentTime)) {
           renderClock(clock);
 
+          if (syncRequested) {
+            setSyncButtonState("buffering");
+          }
+
           return;
         }
 
         renderClock(clock, interpolateStreamTime(anchor, video.currentTime));
+        await updateSync(video, anchor);
       } catch {
         removeClocks();
       } finally {
         updating = false;
       }
     };
+
+    const controller: StreamTimeController = { mountSyncControls };
+
+    activeStreamTimeController = controller;
 
     const intervalId = ctx.setInterval(() => void update(), UPDATE_INTERVAL_MS);
 
@@ -665,6 +1065,92 @@ export const streamTimeRuntime = {
       cleaned = true;
       clearInterval(intervalId);
       deactivate();
+
+      if (activeStreamTimeController === controller) {
+        activeStreamTimeController = undefined;
+      }
+
+      syncControlsMounted = false;
+      syncSignal = undefined;
     };
+  },
+};
+
+function acquireStreamTimeRuntime(ctx: ContentScriptContext, displaysArchives: boolean) {
+  if (displaysArchives) {
+    streamTimeDisplayReferences += 1;
+  }
+
+  let shared = sharedStreamTimeRuntime;
+
+  try {
+    if (!shared) {
+      const controller = new AbortController();
+      const cleanup = streamTimeImplementation.mount(ctx, controller.signal);
+
+      shared = { cleanup, controller, references: 0 };
+      sharedStreamTimeRuntime = shared;
+    }
+  } catch (error) {
+    if (displaysArchives) {
+      streamTimeDisplayReferences -= 1;
+    }
+
+    throw error;
+  }
+
+  shared.references += 1;
+  let released = false;
+
+  return () => {
+    if (released) {
+      return;
+    }
+
+    released = true;
+    shared.references -= 1;
+
+    if (displaysArchives) {
+      streamTimeDisplayReferences -= 1;
+    }
+
+    if (shared.references === 0 && sharedStreamTimeRuntime === shared) {
+      sharedStreamTimeRuntime = undefined;
+      shared.controller.abort();
+      shared.cleanup();
+    }
+  };
+}
+
+export const streamTimeRuntime = {
+  mount(ctx: ContentScriptContext, _signal: AbortSignal) {
+    return acquireStreamTimeRuntime(ctx, true);
+  },
+};
+
+export const streamSyncRuntime = {
+  mount(ctx: ContentScriptContext, signal: AbortSignal) {
+    const releaseStreamTime = acquireStreamTimeRuntime(ctx, false);
+    const detachControls = activeStreamTimeController?.mountSyncControls(signal) ?? (() => {});
+    let disposed = false;
+
+    const cleanup = () => {
+      if (disposed) {
+        return;
+      }
+
+      disposed = true;
+      signal.removeEventListener("abort", cleanup);
+      detachControls();
+      releaseStreamTime();
+    };
+
+    signal.addEventListener("abort", cleanup, { once: true });
+
+    if (signal.aborted) {
+      cleanup();
+    }
+
+    return cleanup;
   },
 };

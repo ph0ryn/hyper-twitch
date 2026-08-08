@@ -7,6 +7,11 @@ export type FeatureDefinition = Readonly<{
 }>;
 
 export const featureDefinitions = {
+  streamSync: {
+    defaultEnabled: false,
+    description: "Keep multiple live streams at the same moment.",
+    label: "Enable stream sync",
+  },
   streamTime: {
     defaultEnabled: true,
     description: "Show the time of day in the stream.",

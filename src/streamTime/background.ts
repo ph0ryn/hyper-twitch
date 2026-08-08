@@ -1,15 +1,23 @@
 import { browser, type Browser } from "#imports";
 
 import {
+  calculateStreamSync,
+  isStreamSyncReport,
   parseMediaPlaylist,
   streamTimeMessages,
   type IndexedStreamSegment,
-  type StreamTimeRequest,
+  type StreamSyncReport,
+  type StreamSyncTargetState,
   type StreamTimeSegment,
 } from "./protocol";
 
 const HLS_URLS = ["https://*.ttvnw.net/*"];
 const MAX_ENTRIES = 512;
+const SYNC_REPORT_MAX_AGE_MS = 10_000;
+
+interface SyncParticipant extends StreamSyncReport {
+  sessionId: string;
+}
 
 const activeSessionByTab = new Map<number, string>();
 const closedSessions = new Set<string>();
@@ -17,6 +25,8 @@ const completedByUrl = new Map<string, Map<number, number>>();
 const inFlightPlaylists = new Set<string>();
 const latestByTab = new Map<number, StreamTimeSegment>();
 const segmentsByUrl = new Map<string, IndexedStreamSegment>();
+const syncParticipantByTab = new Map<number, SyncParticipant>();
+let syncTargetState: StreamSyncTargetState | undefined = undefined;
 
 function capMap<K, V>(map: Map<K, V>) {
   while (map.size > MAX_ENTRIES) {
@@ -115,7 +125,76 @@ function clearCapturedState(tabId: number) {
   }
 }
 
+function removeSyncParticipant(tabId: number, sessionId?: string) {
+  const participant = syncParticipantByTab.get(tabId);
+
+  if (participant && (sessionId === undefined || participant.sessionId === sessionId)) {
+    syncParticipantByTab.delete(tabId);
+  }
+
+  if (syncParticipantByTab.size === 0) {
+    syncTargetState = undefined;
+  }
+}
+
+function pruneStaleSyncParticipants(now: number) {
+  for (const [tabId, participant] of syncParticipantByTab) {
+    if (now - participant.reportedAt > SYNC_REPORT_MAX_AGE_MS) {
+      syncParticipantByTab.delete(tabId);
+    }
+  }
+
+  if (syncParticipantByTab.size === 0) {
+    syncTargetState = undefined;
+  }
+}
+
+function hasActiveSession(tabId: number, sessionId: string) {
+  if (closedSessions.has(sessionId)) {
+    return false;
+  }
+
+  const activeSession = activeSessionByTab.get(tabId);
+
+  if (activeSession === undefined) {
+    activeSessionByTab.set(tabId, sessionId);
+
+    return true;
+  }
+
+  return activeSession === sessionId;
+}
+
+function updateSync(tabId: number, sessionId: string, report: StreamSyncReport) {
+  if (!hasActiveSession(tabId, sessionId)) {
+    return null;
+  }
+
+  const now = Date.now();
+
+  pruneStaleSyncParticipants(now);
+
+  syncParticipantByTab.set(tabId, {
+    ...report,
+    sessionId,
+  });
+
+  const calculation = calculateStreamSync([...syncParticipantByTab.values()], syncTargetState, now);
+
+  syncTargetState = calculation.targetState;
+
+  return calculation.response;
+}
+
 function clearTab(tabId: number) {
+  const sessionId = activeSessionByTab.get(tabId);
+
+  if (sessionId) {
+    closedSessions.add(sessionId);
+    capSet(closedSessions);
+  }
+
+  removeSyncParticipant(tabId);
   activeSessionByTab.delete(tabId);
   clearCapturedState(tabId);
 }
@@ -123,6 +202,14 @@ function clearTab(tabId: number) {
 function subscribeTab(tabId: number, sessionId: string) {
   if (closedSessions.has(sessionId)) {
     return false;
+  }
+
+  const previousSessionId = activeSessionByTab.get(tabId);
+
+  if (previousSessionId && previousSessionId !== sessionId) {
+    closedSessions.add(previousSessionId);
+    capSet(closedSessions);
+    removeSyncParticipant(tabId);
   }
 
   activeSessionByTab.set(tabId, sessionId);
@@ -136,6 +223,7 @@ function unsubscribeTab(tabId: number, sessionId: string) {
   capSet(closedSessions);
 
   if (activeSessionByTab.get(tabId) === sessionId) {
+    removeSyncParticipant(tabId, sessionId);
     activeSessionByTab.delete(tabId);
     clearCapturedState(tabId);
   }
@@ -182,7 +270,11 @@ function handleMessage(message: unknown, sender: Browser.runtime.MessageSender) 
     return undefined;
   }
 
-  const { sessionId, type } = message as Partial<StreamTimeRequest>;
+  const { report, sessionId, type } = message as {
+    report?: unknown;
+    sessionId?: unknown;
+    type?: unknown;
+  };
 
   if (typeof sessionId !== "string") {
     return undefined;
@@ -198,16 +290,18 @@ function handleMessage(message: unknown, sender: Browser.runtime.MessageSender) 
     return Promise.resolve(true);
   }
 
+  if (type === streamTimeMessages.leaveSync) {
+    removeSyncParticipant(tabId, sessionId);
+
+    return Promise.resolve(true);
+  }
+
+  if (type === streamTimeMessages.updateSync && isStreamSyncReport(report)) {
+    return Promise.resolve(updateSync(tabId, sessionId, report));
+  }
+
   if (type === streamTimeMessages.getLatestSegment) {
-    const activeSession = activeSessionByTab.get(tabId);
-
-    if (closedSessions.has(sessionId)) {
-      return Promise.resolve(null);
-    }
-
-    if (activeSession === undefined) {
-      activeSessionByTab.set(tabId, sessionId);
-    } else if (activeSession !== sessionId) {
+    if (!hasActiveSession(tabId, sessionId)) {
       return Promise.resolve(null);
     }
 

@@ -71,6 +71,17 @@ This feature has a narrowly scoped background worker because Twitch fetches HLS
 media outside the content script. The worker is used only for live HLS capture;
 archive timestamps do not require additional host permissions or an API.
 
+## Stream sync
+
+Stream sync adds a `Sync` button below the live stream clock. Select it on two
+or more live streams to keep them at the same moment. Hyper Twitch only rewinds
+players to a moment that every participating stream has buffered; it never
+skips a stream forward. A single participating stream waits for another one.
+
+Stream sync is off by default and does not apply to archives. Turning it off or
+closing a participating stream leaves the remaining playback position alone.
+It includes the live clock it needs, so it also works when Stream time is off.
+
 ## Project Layout
 
 ```text
