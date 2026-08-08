@@ -14,11 +14,8 @@ export interface StreamTimeAnchor {
 }
 
 export interface StreamSyncReport {
-  bufferedEndAbsoluteMs: number;
-  bufferedStartAbsoluteMs: number;
   currentAbsoluteMs: number;
-  joinedAt: number;
-  joinedCurrentAbsoluteMs: number;
+  playbackRate: number;
   reportedAt: number;
 }
 
@@ -28,6 +25,7 @@ export type StreamSyncResponse =
       participantCount: number;
       status: "ready";
       targetAbsoluteMs: number;
+      targetAtMs: number;
     };
 
 export interface StreamSyncTargetState {
@@ -60,8 +58,31 @@ export interface StreamSyncCalculation {
   targetState: StreamSyncTargetState | undefined;
 }
 
-const STREAM_SYNC_BUFFER_END_GUARD_MS = 5_000;
-const STREAM_SYNC_BUFFER_EDGE_MARGIN_MS = 250;
+const STREAM_SYNC_MAX_RATE_ADJUSTMENT = 0.5;
+const STREAM_SYNC_RATE_GAIN = 0.5;
+const STREAM_SYNC_STALL_THRESHOLD_MS = 2_000;
+const STREAM_SYNC_TOLERANCE_SECONDS = 0.1;
+
+export function calculateStreamSyncPlaybackRate(errorSeconds: number) {
+  if (!Number.isFinite(errorSeconds) || Math.abs(errorSeconds) <= STREAM_SYNC_TOLERANCE_SECONDS) {
+    return 1;
+  }
+
+  const adjustment = Math.min(
+    Math.abs(errorSeconds) * STREAM_SYNC_RATE_GAIN,
+    STREAM_SYNC_MAX_RATE_ADJUSTMENT,
+  );
+
+  if (errorSeconds > 0) {
+    return 1 - adjustment;
+  }
+
+  return 1 + adjustment;
+}
+
+export function projectStreamSyncTarget(targetAbsoluteMs: number, targetAtMs: number, now: number) {
+  return targetAbsoluteMs + Math.max(0, now - targetAtMs);
+}
 
 export function isStreamSyncReport(value: unknown): value is StreamSyncReport {
   if (!value || typeof value !== "object") {
@@ -71,13 +92,10 @@ export function isStreamSyncReport(value: unknown): value is StreamSyncReport {
   const report = value as Partial<StreamSyncReport>;
 
   return (
-    Number.isFinite(report.bufferedEndAbsoluteMs) &&
-    Number.isFinite(report.bufferedStartAbsoluteMs) &&
     Number.isFinite(report.currentAbsoluteMs) &&
-    Number.isFinite(report.joinedAt) &&
-    Number.isFinite(report.joinedCurrentAbsoluteMs) &&
+    Number.isFinite(report.playbackRate) &&
     Number.isFinite(report.reportedAt) &&
-    (report.bufferedStartAbsoluteMs as number) <= (report.bufferedEndAbsoluteMs as number)
+    (report.playbackRate as number) > 0
   );
 }
 
@@ -98,44 +116,31 @@ export function calculateStreamSync(
 
   const candidate = Math.min(
     ...participants.map(
-      (participant) => participant.currentAbsoluteMs + Math.max(0, now - participant.reportedAt),
-    ),
-    ...participants.map(
       (participant) =>
-        participant.joinedCurrentAbsoluteMs +
-        Math.max(0, now - participant.joinedAt) -
-        STREAM_SYNC_BUFFER_END_GUARD_MS,
-    ),
-    ...participants.map(
-      (participant) => participant.bufferedEndAbsoluteMs - STREAM_SYNC_BUFFER_END_GUARD_MS,
+        participant.currentAbsoluteMs +
+        Math.max(0, now - participant.reportedAt) * participant.playbackRate,
     ),
   );
-  let projectedTarget = candidate;
+  let targetAbsoluteMs = candidate;
 
   if (targetState) {
-    projectedTarget = targetState.targetAbsoluteMs + Math.max(0, now - targetState.updatedAt);
+    const projectedTarget = targetState.targetAbsoluteMs + Math.max(0, now - targetState.updatedAt);
+
+    targetAbsoluteMs = projectedTarget;
+
+    if (candidate <= projectedTarget - STREAM_SYNC_STALL_THRESHOLD_MS) {
+      targetAbsoluteMs = candidate;
+    }
   }
 
-  const targetAbsoluteMs = Math.min(candidate, projectedTarget);
   const nextTargetState = { targetAbsoluteMs, updatedAt: now };
-  const available = participants.every(
-    (participant) =>
-      participant.bufferedStartAbsoluteMs + STREAM_SYNC_BUFFER_EDGE_MARGIN_MS <= targetAbsoluteMs &&
-      targetAbsoluteMs <= participant.bufferedEndAbsoluteMs - STREAM_SYNC_BUFFER_EDGE_MARGIN_MS,
-  );
-
-  if (!available) {
-    return {
-      response: { participantCount, status: "waiting" },
-      targetState: nextTargetState,
-    };
-  }
 
   return {
     response: {
       participantCount,
       status: "ready",
       targetAbsoluteMs,
+      targetAtMs: now,
     },
     targetState: nextTargetState,
   };

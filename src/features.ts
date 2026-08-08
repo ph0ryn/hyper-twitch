@@ -8,7 +8,7 @@ export type FeatureDefinition = Readonly<{
 
 export const featureDefinitions = {
   streamSync: {
-    defaultEnabled: false,
+    defaultEnabled: true,
     description: "Keep multiple live streams at the same moment.",
     label: "Enable stream sync",
   },

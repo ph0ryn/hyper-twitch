@@ -1,8 +1,10 @@
 import { browser, type ContentScriptContext } from "#imports";
 
 import {
+  calculateStreamSyncPlaybackRate,
   interpolateArchiveTime,
   interpolateStreamTime,
+  projectStreamSyncTarget,
   streamTimeMessages,
   type StreamTimeRequest,
   type StreamTimeAnchor,
@@ -11,18 +13,77 @@ import {
   type StreamSyncResponse,
 } from "./protocol";
 
-const APPEND_GRACE_MS = 200;
+const APPEND_GRACE_MS = 500;
 const HAVE_FUTURE_DATA = 3;
 const HAVE_METADATA = 1;
 const MAX_SEGMENT_AGE_MS = 15_000;
+const SYNC_CONTROL_INTERVAL_MS = 100;
+const SYNC_PLAYBACK_RATE_EPSILON = 0.001;
+const SYNC_TARGET_MAX_AGE_MS = 2_000;
 const UPDATE_INTERVAL_MS = 500;
 const CLOCK_SELECTOR = "[data-hyper-twitch-stream-time]";
 const SHARE_SELECTOR = 'button[data-a-target="share-button"], button[aria-label="Share"]';
 const VOD_SHARE_SELECTOR =
   '[data-test-selector="metadata-layout__split-top"] button[aria-label="Share"]';
 const VIDEO_OPTIONS_SELECTOR = 'button[aria-label="Video Options"]';
-const SYNC_REWIND_THRESHOLD_SECONDS = 0.75;
-const SYNC_BUFFER_MARGIN_SECONDS = 0.25;
+const VIEWER_COUNT_SELECTOR = '[data-a-target="animated-channel-viewers-count"]';
+const SYNC_STYLE_TEXT = `
+[data-hyper-twitch-stream-sync] {
+  appearance: none;
+  align-items: center;
+  background: var(--color-background-button-secondary-default, #e5e5e5);
+  border: 0;
+  border-radius: 9000px;
+  box-sizing: border-box;
+  color: var(--color-text-button-secondary, #1f1f23);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  block-size: 32px;
+  inline-size: 56px;
+  justify-content: center;
+  line-height: 20px;
+  margin: 0 8px 0 0;
+  min-inline-size: 56px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+[data-hyper-twitch-stream-sync]:hover {
+  background: var(--color-background-button-secondary-hover, #d3d3d7);
+  color: var(--color-text-button-secondary, #1f1f23);
+}
+
+[data-hyper-twitch-stream-sync]:focus-visible {
+  outline: 2px solid var(--color-border-button-focus, #9147ff);
+  outline-offset: 2px;
+}
+
+[data-hyper-twitch-stream-sync]:active {
+  background: var(--color-background-button-secondary-active, #c7c7cc);
+  transform: translateY(1px);
+}
+
+[data-hyper-twitch-stream-sync][aria-pressed="true"] {
+  background: var(--color-background-button-brand, #9147ff);
+  color: var(--color-text-button, #fff);
+}
+
+[data-hyper-twitch-stream-sync][aria-pressed="true"]:hover {
+  background: var(--color-background-button-brand-hover, #772ce8);
+}
+
+[data-hyper-twitch-stream-sync][aria-pressed="true"]:active {
+  background: var(--color-background-button-brand-active, #5c16c5);
+}
+
+[data-hyper-twitch-stream-sync][aria-busy="true"] {
+  opacity: 0.8;
+}
+`;
 
 const accessibleFormatter = new Intl.DateTimeFormat(undefined, {
   day: "2-digit",
@@ -160,6 +221,28 @@ function findClockPlacement(kind: PlaybackKind): ClockPlacement | null {
   }
 
   return { ...sharePlacement, kind };
+}
+
+function findViewerCountWrapper(metrics: HTMLElement) {
+  const viewerCount = [...metrics.querySelectorAll<HTMLElement>(VIEWER_COUNT_SELECTOR)].find(
+    (element) => element.getClientRects().length > 0,
+  );
+
+  if (!viewerCount) {
+    return null;
+  }
+
+  let wrapper = viewerCount;
+
+  while (wrapper.parentElement && wrapper.parentElement !== metrics) {
+    wrapper = wrapper.parentElement;
+  }
+
+  if (wrapper.parentElement === metrics) {
+    return wrapper;
+  }
+
+  return null;
 }
 
 function styleClock(root: HTMLElement, timer: HTMLElement, kind: PlaybackKind) {
@@ -450,13 +533,12 @@ const streamTimeImplementation = {
     let vodRequest: Promise<number | null> | undefined = undefined;
     let syncButton: HTMLButtonElement | undefined = undefined;
     let syncControlsMounted = false;
-    let syncJoinedAt: number | undefined = undefined;
-    let syncJoinedCurrentAbsoluteMs: number | undefined = undefined;
+    let syncPlaybackRate: { rate: number; video: HTMLVideoElement } | undefined = undefined;
     let syncRequested = false;
     let syncRequestVersion = 0;
-    let syncRoot: HTMLElement | undefined = undefined;
-    let syncRootStyle: string | null | undefined = undefined;
+    let syncStyle: HTMLStyleElement | undefined = undefined;
     let syncSignal: AbortSignal | undefined = undefined;
+    let syncTarget: { targetAbsoluteMs: number; targetAtMs: number } | undefined = undefined;
 
     const isInactive = () => cleaned || signal.aborted;
 
@@ -480,45 +562,93 @@ const streamTimeImplementation = {
         return;
       }
 
-      const labels = {
-        buffering: "Buffering…",
-        sync: "Sync",
-        synced: "Synced",
-        waiting: "Waiting…",
+      syncButton.textContent = "Sync";
+      syncButton.dataset.state = state;
+      syncButton.setAttribute("aria-pressed", String(syncRequested));
+      syncButton.setAttribute("aria-busy", String(state === "buffering" || state === "waiting"));
+
+      const titles = {
+        buffering: "Adjusting playback speed. Select to stop syncing.",
+        sync: "Sync this live stream with other live streams",
+        synced: "Synced with other live streams. Select to stop syncing.",
+        waiting: "Waiting for another live stream. Select to stop syncing.",
       } as const;
 
-      syncButton.textContent = labels[state];
-      syncButton.setAttribute("aria-pressed", String(syncRequested));
+      syncButton.title = titles[state];
 
-      if (state === "sync") {
-        syncButton.title = "Sync live streams to the same moment";
+      if (syncRequested) {
+        syncButton.setAttribute("aria-label", "Stop syncing this live stream");
       } else {
-        syncButton.title = "Stop syncing live streams";
+        syncButton.setAttribute("aria-label", "Sync this live stream with other live streams");
       }
     };
 
-    const restoreSyncRoot = () => {
-      if (!syncRoot) {
+    const ensureSyncStyle = () => {
+      if (syncStyle?.isConnected) {
         return;
       }
 
-      if (syncRootStyle === null) {
-        syncRoot.removeAttribute("style");
-      } else if (syncRootStyle !== undefined) {
-        syncRoot.setAttribute("style", syncRootStyle);
-      }
+      const parent = globalThis.document.head;
 
-      syncRoot = undefined;
-      syncRootStyle = undefined;
+      syncStyle?.remove();
+      syncStyle = globalThis.document.createElement("style");
+      syncStyle.dataset.hyperTwitchStreamSyncStyle = "";
+      syncStyle.textContent = SYNC_STYLE_TEXT;
+      parent.append(syncStyle);
     };
 
     const removeSyncButton = () => {
       syncButton?.remove();
       syncButton = undefined;
-      restoreSyncRoot();
+    };
+
+    const removeSyncStyle = () => {
+      syncStyle?.remove();
+      syncStyle = undefined;
+    };
+
+    const restoreSyncPlaybackRate = () => {
+      const playbackRate = syncPlaybackRate;
+
+      syncPlaybackRate = undefined;
+
+      if (!playbackRate) {
+        return;
+      }
+
+      try {
+        playbackRate.video.playbackRate = playbackRate.rate;
+      } catch {
+        // The video can be detached while Twitch replaces the player.
+      }
+    };
+
+    const setSyncPlaybackRate = (video: HTMLVideoElement, rate: number) => {
+      if (syncPlaybackRate?.video !== video) {
+        restoreSyncPlaybackRate();
+        syncPlaybackRate = { rate: video.playbackRate, video };
+      }
+
+      if (Math.abs(video.playbackRate - rate) > SYNC_PLAYBACK_RATE_EPSILON) {
+        try {
+          video.playbackRate = rate;
+        } catch {
+          // The next local control pass retries after a player transition.
+        }
+      }
+    };
+
+    const clearSyncTarget = () => {
+      syncTarget = undefined;
+    };
+
+    const resetSyncControlState = () => {
+      clearSyncTarget();
+      restoreSyncPlaybackRate();
     };
 
     const leaveSync = () => {
+      resetSyncControlState();
       void sendMessage({ sessionId, type: streamTimeMessages.leaveSync });
     };
 
@@ -528,9 +658,8 @@ const streamTimeImplementation = {
         leaveSync();
       }
 
+      resetSyncControlState();
       syncRequested = false;
-      syncJoinedAt = undefined;
-      syncJoinedCurrentAbsoluteMs = undefined;
       setSyncButtonState("sync");
       removeSyncButton();
     };
@@ -544,11 +673,15 @@ const streamTimeImplementation = {
       syncRequestVersion += 1;
 
       if (syncRequested) {
+        clearSyncTarget();
+
+        if (currentVideo) {
+          setSyncPlaybackRate(currentVideo, 1);
+        }
+
         setSyncButtonState("waiting");
       } else {
         leaveSync();
-        syncJoinedAt = undefined;
-        syncJoinedCurrentAbsoluteMs = undefined;
         setSyncButtonState("sync");
       }
     };
@@ -558,35 +691,29 @@ const streamTimeImplementation = {
         return;
       }
 
-      if (syncButton?.parentElement !== clock.root) {
+      const metrics = clock.root.parentElement;
+
+      // Twitch replaces this row during rerenders, so keep the sync session until it returns.
+      if (!metrics) {
+        return;
+      }
+
+      const viewerCountWrapper = findViewerCountWrapper(metrics);
+
+      if (!viewerCountWrapper) {
+        return;
+      }
+
+      if (!syncButton) {
         syncRequestVersion += 1;
-        removeSyncButton();
-        syncRoot = clock.root;
-        syncRootStyle = clock.root.getAttribute("style");
 
         const button = globalThis.document.createElement("button");
 
         button.type = "button";
         button.dataset.hyperTwitchStreamSync = "";
         button.setAttribute("aria-label", "Sync live streams to the same moment");
-        button.style.background = "transparent";
-        button.style.border = "0";
-        button.style.color = "inherit";
-        button.style.cursor = "pointer";
-        button.style.font = "inherit";
-        button.style.fontSize = "12px";
-        button.style.fontVariantNumeric = "tabular-nums";
-        button.style.lineHeight = "16px";
-        button.style.marginBlockStart = "2px";
-        button.style.minInlineSize = "10ch";
-        button.style.paddingBlock = "0px";
-        button.style.paddingInline = "4px";
         button.addEventListener("click", onSyncButtonClick);
 
-        clock.root.append(button);
-        clock.root.style.alignItems = "center";
-        clock.root.style.display = "flex";
-        clock.root.style.flexDirection = "column";
         syncButton = button;
 
         if (syncRequested) {
@@ -595,23 +722,15 @@ const streamTimeImplementation = {
           setSyncButtonState("sync");
         }
       }
-    };
 
-    const findBufferedRange = (video: HTMLVideoElement, time: number) => {
-      try {
-        for (let index = 0; index < video.buffered.length; index += 1) {
-          const start = video.buffered.start(index);
-          const end = video.buffered.end(index);
+      ensureSyncStyle();
 
-          if (start <= time && time <= end) {
-            return { end, start };
-          }
-        }
-      } catch {
-        return null;
+      if (
+        syncButton.parentElement !== metrics ||
+        syncButton.nextElementSibling !== viewerCountWrapper
+      ) {
+        metrics.insertBefore(syncButton, viewerCountWrapper);
       }
-
-      return null;
     };
 
     const parseSyncResponse = (value: unknown): StreamSyncResponse | null => {
@@ -632,42 +751,23 @@ const streamTimeImplementation = {
       if (
         video.paused ||
         video.seeking ||
-        video.readyState < HAVE_FUTURE_DATA ||
-        !Number.isFinite(video.currentTime)
+        !Number.isFinite(video.currentTime) ||
+        !Number.isFinite(video.playbackRate) ||
+        video.playbackRate <= 0
       ) {
         return null;
       }
 
-      const range = findBufferedRange(video, video.currentTime);
-
-      if (!range) {
-        return null;
-      }
-
-      const bufferedStartAbsoluteMs = interpolateStreamTime(streamAnchor, range.start);
-      const bufferedEndAbsoluteMs = interpolateStreamTime(streamAnchor, range.end);
       const currentAbsoluteMs = interpolateStreamTime(streamAnchor, video.currentTime);
       const reportedAt = Date.now();
 
-      if (
-        !Number.isFinite(bufferedStartAbsoluteMs) ||
-        !Number.isFinite(bufferedEndAbsoluteMs) ||
-        !Number.isFinite(currentAbsoluteMs)
-      ) {
+      if (!Number.isFinite(currentAbsoluteMs)) {
         return null;
       }
 
-      if (syncJoinedAt === undefined || syncJoinedCurrentAbsoluteMs === undefined) {
-        syncJoinedAt = reportedAt;
-        syncJoinedCurrentAbsoluteMs = currentAbsoluteMs;
-      }
-
       return {
-        bufferedEndAbsoluteMs,
-        bufferedStartAbsoluteMs,
         currentAbsoluteMs,
-        joinedAt: syncJoinedAt,
-        joinedCurrentAbsoluteMs: syncJoinedCurrentAbsoluteMs,
+        playbackRate: video.playbackRate,
         reportedAt,
       } satisfies StreamSyncReport;
     };
@@ -675,50 +775,50 @@ const streamTimeImplementation = {
     const applySyncTarget = (
       video: HTMLVideoElement,
       streamAnchor: StreamTimeAnchor,
-      targetAbsoluteMs: number,
+      target: { targetAbsoluteMs: number; targetAtMs: number },
     ) => {
       if (
         video.paused ||
-        video.seeking ||
         video.readyState < HAVE_METADATA ||
         !Number.isFinite(video.currentTime) ||
-        !Number.isFinite(targetAbsoluteMs)
+        !Number.isFinite(target.targetAbsoluteMs) ||
+        !Number.isFinite(target.targetAtMs)
       ) {
+        setSyncPlaybackRate(video, 1);
+
         return "buffering" as const;
       }
 
+      if (video.seeking) {
+        setSyncPlaybackRate(video, 1);
+
+        return "buffering" as const;
+      }
+
+      const projectedTargetAbsoluteMs = projectStreamSyncTarget(
+        target.targetAbsoluteMs,
+        target.targetAtMs,
+        Date.now(),
+      );
       const targetMedia =
-        streamAnchor.mediaEnd + (targetAbsoluteMs - streamAnchor.absoluteEndMs) / 1_000;
+        streamAnchor.mediaEnd + (projectedTargetAbsoluteMs - streamAnchor.absoluteEndMs) / 1_000;
 
       if (!Number.isFinite(targetMedia)) {
+        setSyncPlaybackRate(video, 1);
+
         return "buffering" as const;
       }
 
-      if (targetMedia > video.currentTime + SYNC_REWIND_THRESHOLD_SECONDS) {
-        return "buffering" as const;
-      }
+      const errorSeconds = video.currentTime - targetMedia;
+      const playbackRate = calculateStreamSyncPlaybackRate(errorSeconds);
 
-      if (targetMedia >= video.currentTime - SYNC_REWIND_THRESHOLD_SECONDS) {
+      setSyncPlaybackRate(video, playbackRate);
+
+      if (playbackRate === 1) {
         return "synced" as const;
       }
 
-      const targetRange = findBufferedRange(video, targetMedia);
-
-      if (
-        !targetRange ||
-        targetMedia < targetRange.start + SYNC_BUFFER_MARGIN_SECONDS ||
-        targetMedia > targetRange.end - SYNC_BUFFER_MARGIN_SECONDS
-      ) {
-        return "buffering" as const;
-      }
-
-      try {
-        video.currentTime = targetMedia;
-      } catch {
-        return "buffering" as const;
-      }
-
-      return "synced" as const;
+      return "buffering" as const;
     };
 
     const updateSync = async (video: HTMLVideoElement, streamAnchor: StreamTimeAnchor) => {
@@ -758,18 +858,58 @@ const streamTimeImplementation = {
       const parsed = parseSyncResponse(response);
 
       if (!parsed || parsed.status === "waiting") {
+        clearSyncTarget();
         setSyncButtonState("waiting");
 
         return;
       }
 
-      if (!Number.isFinite(parsed.targetAbsoluteMs)) {
+      if (!Number.isFinite(parsed.targetAbsoluteMs) || !Number.isFinite(parsed.targetAtMs)) {
+        clearSyncTarget();
         setSyncButtonState("buffering");
 
         return;
       }
 
-      setSyncButtonState(applySyncTarget(video, streamAnchor, parsed.targetAbsoluteMs));
+      syncTarget = {
+        targetAbsoluteMs: parsed.targetAbsoluteMs,
+        targetAtMs: parsed.targetAtMs,
+      };
+    };
+
+    const controlSync = () => {
+      if (!syncControlsMounted || !syncRequested || syncSignal?.aborted) {
+        return;
+      }
+
+      const video = currentVideo;
+
+      if (!video || currentMode?.kind !== "live") {
+        return;
+      }
+
+      if (!syncTarget) {
+        setSyncPlaybackRate(video, 1);
+
+        return;
+      }
+
+      if (Date.now() - syncTarget.targetAtMs > SYNC_TARGET_MAX_AGE_MS) {
+        setSyncPlaybackRate(video, 1);
+        clearSyncTarget();
+        setSyncButtonState("waiting");
+
+        return;
+      }
+
+      if (!anchor) {
+        setSyncPlaybackRate(video, 1);
+        setSyncButtonState("buffering");
+
+        return;
+      }
+
+      setSyncButtonState(applySyncTarget(video, anchor, syncTarget));
     };
 
     const mountSyncControls = (nextSignal: AbortSignal) => {
@@ -796,6 +936,7 @@ const streamTimeImplementation = {
         resetSyncState();
         syncControlsMounted = false;
         syncSignal = undefined;
+        removeSyncStyle();
       };
 
       nextSignal.addEventListener("abort", cleanup, { once: true });
@@ -1000,10 +1141,10 @@ const streamTimeImplementation = {
         }
 
         if (
+          !anchor &&
           isStreamTimeSegment(response) &&
           Date.now() - response.completedAt <= MAX_SEGMENT_AGE_MS &&
-          response.url !== pendingSegment?.url &&
-          response.url !== anchor?.url
+          response.url !== pendingSegment?.url
         ) {
           pendingSegment = response;
         }
@@ -1015,12 +1156,15 @@ const streamTimeImplementation = {
         }
 
         if (
+          !anchor &&
           pendingSegment &&
           bufferEnd !== null &&
           !video.paused &&
           video.readyState >= HAVE_FUTURE_DATA &&
           Date.now() - pendingSegment.completedAt >= APPEND_GRACE_MS
         ) {
+          // Keep the initial affine mapping stable. A later network completion does not prove
+          // that the current buffer end belongs to that same segment.
           anchor = {
             absoluteEndMs: pendingSegment.programDateTimeMs + pendingSegment.durationMs,
             mediaEnd: bufferEnd,
@@ -1030,7 +1174,7 @@ const streamTimeImplementation = {
           pendingSegment = undefined;
         }
 
-        if (!anchor || video.readyState < HAVE_FUTURE_DATA || !Number.isFinite(video.currentTime)) {
+        if (!anchor || !Number.isFinite(video.currentTime)) {
           renderClock(clock);
 
           if (syncRequested) {
@@ -1053,6 +1197,7 @@ const streamTimeImplementation = {
 
     activeStreamTimeController = controller;
 
+    const syncControlIntervalId = ctx.setInterval(controlSync, SYNC_CONTROL_INTERVAL_MS);
     const intervalId = ctx.setInterval(() => void update(), UPDATE_INTERVAL_MS);
 
     void update();
@@ -1063,8 +1208,10 @@ const streamTimeImplementation = {
       }
 
       cleaned = true;
+      clearInterval(syncControlIntervalId);
       clearInterval(intervalId);
       deactivate();
+      removeSyncStyle();
 
       if (activeStreamTimeController === controller) {
         activeStreamTimeController = undefined;

@@ -2,27 +2,23 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  calculateStreamSyncPlaybackRate,
   calculateStreamSync,
   interpolateArchiveTime,
   interpolateStreamTime,
   parseMediaPlaylist,
+  projectStreamSyncTarget,
 } from "./protocol.ts";
 
 function syncParticipant(overrides = {}) {
   const report = {
-    bufferedEndAbsoluteMs: 105_000,
-    bufferedStartAbsoluteMs: 80_000,
     currentAbsoluteMs: 98_000,
+    playbackRate: 1,
     reportedAt: 100_000,
     ...overrides,
   };
 
-  return {
-    joinedAt: report.reportedAt,
-    joinedCurrentAbsoluteMs: report.currentAbsoluteMs,
-    ...report,
-    ...overrides,
-  };
+  return report;
 }
 
 test("parses consecutive HLS program times and resolves segment URLs", () => {
@@ -81,13 +77,26 @@ test("waits for a second sync participant", () => {
   });
 });
 
-test("adds a safety delay behind the slowest joining participant", () => {
+test("projects a ready sync target from its background calculation time", () => {
+  assert.equal(projectStreamSyncTarget(86_000, 100_000, 100_125), 86_125);
+  assert.equal(projectStreamSyncTarget(86_000, 100_000, 99_875), 86_000);
+});
+
+test("adjusts playback speed toward the shared moment", () => {
+  assert.equal(calculateStreamSyncPlaybackRate(0), 1);
+  assert.equal(calculateStreamSyncPlaybackRate(0.1), 1);
+  assert.equal(calculateStreamSyncPlaybackRate(0.2), 0.9);
+  assert.equal(calculateStreamSyncPlaybackRate(1), 0.5);
+  assert.equal(calculateStreamSyncPlaybackRate(-0.2), 1.1);
+  assert.equal(calculateStreamSyncPlaybackRate(-1), 1.5);
+});
+
+test("selects the slowest current playback moment", () => {
   assert.deepEqual(
     calculateStreamSync(
       [
         syncParticipant(),
         syncParticipant({
-          bufferedEndAbsoluteMs: 98_000,
           currentAbsoluteMs: 90_000,
           reportedAt: 99_000,
         }),
@@ -99,20 +108,17 @@ test("adds a safety delay behind the slowest joining participant", () => {
       response: {
         participantCount: 2,
         status: "ready",
-        targetAbsoluteMs: 86_000,
+        targetAbsoluteMs: 91_000,
+        targetAtMs: 100_000,
       },
-      targetState: { targetAbsoluteMs: 86_000, updatedAt: 100_000 },
+      targetState: { targetAbsoluteMs: 91_000, updatedAt: 100_000 },
     },
   );
 });
 
 test("recovers the same target after the coordinator restarts", () => {
   const participant = syncParticipant({
-    bufferedEndAbsoluteMs: 105_000,
-    bufferedStartAbsoluteMs: 60_000,
     currentAbsoluteMs: 75_000,
-    joinedAt: 90_000,
-    joinedCurrentAbsoluteMs: 70_000,
     reportedAt: 100_000,
   });
 
@@ -121,12 +127,13 @@ test("recovers the same target after the coordinator restarts", () => {
       participantCount: 2,
       status: "ready",
       targetAbsoluteMs: 75_000,
+      targetAtMs: 100_000,
     },
     targetState: { targetAbsoluteMs: 75_000, updatedAt: 100_000 },
   });
 });
 
-test("does not jump forward when a participant leaves and buffers improve", () => {
+test("does not jump forward when a participant leaves", () => {
   const targetState = { targetAbsoluteMs: 86_000, updatedAt: 100_000 };
   const waiting = calculateStreamSync([syncParticipant()], targetState, 102_000);
 
@@ -139,12 +146,10 @@ test("does not jump forward when a participant leaves and buffers improve", () =
     calculateStreamSync(
       [
         syncParticipant({
-          bufferedEndAbsoluteMs: 110_000,
           currentAbsoluteMs: 101_000,
           reportedAt: 104_000,
         }),
         syncParticipant({
-          bufferedEndAbsoluteMs: 109_000,
           currentAbsoluteMs: 100_000,
           reportedAt: 104_000,
         }),
@@ -157,8 +162,65 @@ test("does not jump forward when a participant leaves and buffers improve", () =
         participantCount: 2,
         status: "ready",
         targetAbsoluteMs: 90_000,
+        targetAtMs: 104_000,
       },
       targetState: { targetAbsoluteMs: 90_000, updatedAt: 104_000 },
+    },
+  );
+});
+
+test("keeps a stable target through playback timing jitter", () => {
+  assert.deepEqual(
+    calculateStreamSync(
+      [
+        syncParticipant({
+          currentAbsoluteMs: 89_500,
+          reportedAt: 101_000,
+        }),
+        syncParticipant({
+          currentAbsoluteMs: 89_600,
+          reportedAt: 101_000,
+        }),
+      ],
+      { targetAbsoluteMs: 90_000, updatedAt: 100_000 },
+      101_000,
+    ),
+    {
+      response: {
+        participantCount: 2,
+        status: "ready",
+        targetAbsoluteMs: 91_000,
+        targetAtMs: 101_000,
+      },
+      targetState: { targetAbsoluteMs: 91_000, updatedAt: 101_000 },
+    },
+  );
+});
+
+test("moves a stable target backward after a sustained stall", () => {
+  assert.deepEqual(
+    calculateStreamSync(
+      [
+        syncParticipant({
+          currentAbsoluteMs: 88_300,
+          reportedAt: 101_000,
+        }),
+        syncParticipant({
+          currentAbsoluteMs: 88_400,
+          reportedAt: 101_000,
+        }),
+      ],
+      { targetAbsoluteMs: 90_000, updatedAt: 100_000 },
+      101_000,
+    ),
+    {
+      response: {
+        participantCount: 2,
+        status: "ready",
+        targetAbsoluteMs: 88_300,
+        targetAtMs: 101_000,
+      },
+      targetState: { targetAbsoluteMs: 88_300, updatedAt: 101_000 },
     },
   );
 });
@@ -168,12 +230,10 @@ test("moves backward when a slower participant joins", () => {
     calculateStreamSync(
       [
         syncParticipant({
-          bufferedEndAbsoluteMs: 110_000,
           currentAbsoluteMs: 101_000,
           reportedAt: 105_000,
         }),
         syncParticipant({
-          bufferedEndAbsoluteMs: 99_000,
           currentAbsoluteMs: 89_000,
           reportedAt: 105_000,
         }),
@@ -185,29 +245,40 @@ test("moves backward when a slower participant joins", () => {
       response: {
         participantCount: 2,
         status: "ready",
-        targetAbsoluteMs: 84_000,
+        targetAbsoluteMs: 89_000,
+        targetAtMs: 105_000,
       },
-      targetState: { targetAbsoluteMs: 84_000, updatedAt: 105_000 },
+      targetState: { targetAbsoluteMs: 89_000, updatedAt: 105_000 },
     },
   );
 });
 
-test("waits when the target is outside a participant buffer", () => {
+test("projects each participant with its playback rate", () => {
   assert.deepEqual(
     calculateStreamSync(
       [
-        syncParticipant({ bufferedStartAbsoluteMs: 95_500, currentAbsoluteMs: 99_000 }),
         syncParticipant({
-          bufferedEndAbsoluteMs: 100_000,
           currentAbsoluteMs: 90_000,
+          playbackRate: 0.5,
+          reportedAt: 99_000,
+        }),
+        syncParticipant({
+          currentAbsoluteMs: 95_000,
+          playbackRate: 1.5,
+          reportedAt: 99_000,
         }),
       ],
       undefined,
       100_000,
     ),
     {
-      response: { participantCount: 2, status: "waiting" },
-      targetState: { targetAbsoluteMs: 85_000, updatedAt: 100_000 },
+      response: {
+        participantCount: 2,
+        status: "ready",
+        targetAbsoluteMs: 90_500,
+        targetAtMs: 100_000,
+      },
+      targetState: { targetAbsoluteMs: 90_500, updatedAt: 100_000 },
     },
   );
 });

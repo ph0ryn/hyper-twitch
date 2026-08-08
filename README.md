@@ -73,14 +73,20 @@ archive timestamps do not require additional host permissions or an API.
 
 ## Stream sync
 
-Stream sync adds a `Sync` button below the live stream clock. Select it on two
-or more live streams to keep them at the same moment. Hyper Twitch only rewinds
-players to a moment that every participating stream has buffered; it never
-skips a stream forward. A single participating stream waits for another one.
+Stream sync adds a `Sync` button to the left of the live viewer count. Select it
+on two or more live streams to keep them at the same moment. Hyper Twitch never
+seeks the players. It checks drift every 100 ms and temporarily adjusts playback
+speed between 0.5× and 1.5× until streams are within 100 ms, then returns them to
+1×. The 100 ms threshold applies to Hyper Twitch's estimated wall-clock times.
+A single participating stream waits for another one.
+The wall-clock mapping remains approximate because Twitch does not expose an
+exact public live-player timeline.
 
-Stream sync is off by default and does not apply to archives. Turning it off or
-closing a participating stream leaves the remaining playback position alone.
-It includes the live clock it needs, so it also works when Stream time is off.
+The popup setting is on by default, but each stream starts outside sync mode
+until its button is selected. Sync mode does not apply to archives. Turning the
+popup setting off or closing a participating stream leaves the remaining
+playback position alone. It includes the live clock it needs, so it also works
+when Stream time is off.
 
 ## Project Layout
 
