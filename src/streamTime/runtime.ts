@@ -4,8 +4,10 @@ import {
   calculateStreamSyncPlaybackRate,
   interpolateArchiveTime,
   interpolateStreamTime,
+  isSameStreamSyncTargetLine,
   isStreamSyncAligned,
   projectStreamSyncTarget,
+  STREAM_SYNC_SEEK_THRESHOLD_SECONDS,
   streamTimeMessages,
   type StreamTimeRequest,
   type StreamTimeAnchor,
@@ -20,6 +22,7 @@ const HAVE_METADATA = 1;
 const MAX_SEGMENT_AGE_MS = 15_000;
 const SYNC_CONTROL_INTERVAL_MS = 100;
 const SYNC_PLAYBACK_RATE_EPSILON = 0.001;
+const SYNC_SEEK_BUFFER_MARGIN_SECONDS = 0.25;
 const SYNC_TARGET_MAX_AGE_MS = 2_000;
 const UPDATE_INTERVAL_MS = 500;
 const CLOCK_SELECTOR = "[data-hyper-twitch-stream-time]";
@@ -244,6 +247,23 @@ function findViewerCountWrapper(metrics: HTMLElement) {
   }
 
   return null;
+}
+
+function isBufferedMediaTime(video: HTMLVideoElement, mediaTime: number) {
+  try {
+    for (let index = 0; index < video.buffered.length; index += 1) {
+      const start = video.buffered.start(index) + SYNC_SEEK_BUFFER_MARGIN_SECONDS;
+      const end = video.buffered.end(index) - SYNC_SEEK_BUFFER_MARGIN_SECONDS;
+
+      if (mediaTime >= start && mediaTime <= end) {
+        return true;
+      }
+    }
+  } catch {
+    // Twitch can replace the MediaSource while its ranges are being read.
+  }
+
+  return false;
 }
 
 function styleClock(root: HTMLElement, timer: HTMLElement, kind: PlaybackKind) {
@@ -539,6 +559,7 @@ const streamTimeImplementation = {
     let syncRequestVersion = 0;
     let syncStyle: HTMLStyleElement | undefined = undefined;
     let syncSignal: AbortSignal | undefined = undefined;
+    let syncSoughtTarget: { targetAbsoluteMs: number; targetAtMs: number } | undefined = undefined;
     let syncTarget: { targetAbsoluteMs: number; targetAtMs: number } | undefined = undefined;
 
     const isInactive = () => cleaned || signal.aborted;
@@ -645,6 +666,7 @@ const streamTimeImplementation = {
 
     const resetSyncControlState = () => {
       clearSyncTarget();
+      syncSoughtTarget = undefined;
       restoreSyncPlaybackRate();
     };
 
@@ -811,6 +833,24 @@ const streamTimeImplementation = {
       }
 
       const errorSeconds = video.currentTime - targetMedia;
+
+      if (
+        errorSeconds > STREAM_SYNC_SEEK_THRESHOLD_SECONDS &&
+        (!syncSoughtTarget || !isSameStreamSyncTargetLine(syncSoughtTarget, target)) &&
+        isBufferedMediaTime(video, targetMedia)
+      ) {
+        setSyncPlaybackRate(video, 1);
+        syncSoughtTarget = { ...target };
+
+        try {
+          video.currentTime = targetMedia;
+
+          return "buffering" as const;
+        } catch {
+          // Fall back to playback-rate correction if Twitch rejects the seek.
+        }
+      }
+
       const playbackRate = calculateStreamSyncPlaybackRate(errorSeconds);
 
       setSyncPlaybackRate(video, playbackRate);

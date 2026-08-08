@@ -6,6 +6,7 @@ import {
   calculateStreamSync,
   interpolateArchiveTime,
   interpolateStreamTime,
+  isSameStreamSyncTargetLine,
   isStreamSyncAligned,
   parseMediaPlaylist,
   projectStreamSyncTarget,
@@ -83,6 +84,20 @@ test("projects a ready sync target from its background calculation time", () => 
   assert.equal(projectStreamSyncTarget(86_000, 100_000, 99_875), 86_000);
 });
 
+test("recognizes updates to the same moving sync target", () => {
+  const previous = { targetAbsoluteMs: 86_000, targetAtMs: 100_000 };
+
+  assert.equal(
+    isSameStreamSyncTargetLine(previous, { targetAbsoluteMs: 86_500, targetAtMs: 100_500 }),
+    true,
+  );
+
+  assert.equal(
+    isSameStreamSyncTargetLine(previous, { targetAbsoluteMs: 84_500, targetAtMs: 100_500 }),
+    false,
+  );
+});
+
 test("adjusts playback speed toward the shared moment", () => {
   assert.equal(calculateStreamSyncPlaybackRate(0), 1);
   assert.equal(calculateStreamSyncPlaybackRate(0.01), 0.995);
@@ -143,13 +158,13 @@ test("recovers the same target after the coordinator restarts", () => {
   });
 });
 
-test("does not jump forward when a participant leaves", () => {
+test("resets the target when a sync group drops below two participants", () => {
   const targetState = { targetAbsoluteMs: 86_000, updatedAt: 100_000 };
   const waiting = calculateStreamSync([syncParticipant()], targetState, 102_000);
 
   assert.deepEqual(waiting, {
     response: { participantCount: 1, status: "waiting" },
-    targetState,
+    targetState: undefined,
   });
 
   assert.deepEqual(
@@ -164,17 +179,39 @@ test("does not jump forward when a participant leaves", () => {
           reportedAt: 104_000,
         }),
       ],
-      waiting.targetState,
+      undefined,
       104_000,
     ),
     {
       response: {
         participantCount: 2,
         status: "ready",
-        targetAbsoluteMs: 90_000,
+        targetAbsoluteMs: 100_000,
         targetAtMs: 104_000,
       },
-      targetState: { targetAbsoluteMs: 90_000, updatedAt: 104_000 },
+      targetState: { targetAbsoluteMs: 100_000, updatedAt: 104_000 },
+    },
+  );
+});
+
+test("does not keep a stale target behind the slowest participant", () => {
+  assert.deepEqual(
+    calculateStreamSync(
+      [
+        syncParticipant({ currentAbsoluteMs: 36_000, reportedAt: 4_000 }),
+        syncParticipant({ currentAbsoluteMs: 50_000, reportedAt: 4_000 }),
+      ],
+      { targetAbsoluteMs: 30_000, updatedAt: 0 },
+      4_000,
+    ),
+    {
+      response: {
+        participantCount: 2,
+        status: "ready",
+        targetAbsoluteMs: 36_000,
+        targetAtMs: 4_000,
+      },
+      targetState: { targetAbsoluteMs: 36_000, updatedAt: 4_000 },
     },
   );
 });

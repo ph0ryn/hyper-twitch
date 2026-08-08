@@ -63,6 +63,8 @@ const STREAM_SYNC_RATE_GAIN = 0.5;
 const STREAM_SYNC_STATUS_TOLERANCE_SECONDS = 0.1;
 const STREAM_SYNC_STALL_THRESHOLD_MS = 2_000;
 
+export const STREAM_SYNC_SEEK_THRESHOLD_SECONDS = 2;
+
 export function isStreamSyncAligned(errorSeconds: number) {
   return (
     Number.isFinite(errorSeconds) && Math.abs(errorSeconds) <= STREAM_SYNC_STATUS_TOLERANCE_SECONDS
@@ -88,6 +90,22 @@ export function calculateStreamSyncPlaybackRate(errorSeconds: number) {
 
 export function projectStreamSyncTarget(targetAbsoluteMs: number, targetAtMs: number, now: number) {
   return targetAbsoluteMs + Math.max(0, now - targetAtMs);
+}
+
+export function isSameStreamSyncTargetLine(
+  previous: { targetAbsoluteMs: number; targetAtMs: number },
+  current: { targetAbsoluteMs: number; targetAtMs: number },
+) {
+  const projectedPrevious = projectStreamSyncTarget(
+    previous.targetAbsoluteMs,
+    previous.targetAtMs,
+    current.targetAtMs,
+  );
+
+  return (
+    Math.abs(projectedPrevious - current.targetAbsoluteMs) <
+    STREAM_SYNC_SEEK_THRESHOLD_SECONDS * 1_000
+  );
 }
 
 export function isStreamSyncReport(value: unknown): value is StreamSyncReport {
@@ -117,7 +135,7 @@ export function calculateStreamSync(
   }
 
   if (participantCount === 1) {
-    return { response: { participantCount, status: "waiting" }, targetState };
+    return { response: { participantCount, status: "waiting" }, targetState: undefined };
   }
 
   const candidate = Math.min(
@@ -132,10 +150,8 @@ export function calculateStreamSync(
   if (targetState) {
     const projectedTarget = targetState.targetAbsoluteMs + Math.max(0, now - targetState.updatedAt);
 
-    targetAbsoluteMs = projectedTarget;
-
-    if (candidate <= projectedTarget - STREAM_SYNC_STALL_THRESHOLD_MS) {
-      targetAbsoluteMs = candidate;
+    if (candidate > projectedTarget - STREAM_SYNC_STALL_THRESHOLD_MS) {
+      targetAbsoluteMs = Math.max(candidate, projectedTarget);
     }
   }
 
