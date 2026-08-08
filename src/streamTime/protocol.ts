@@ -60,11 +60,17 @@ export interface StreamSyncCalculation {
 
 const STREAM_SYNC_MAX_RATE_ADJUSTMENT = 0.5;
 const STREAM_SYNC_RATE_GAIN = 0.5;
+const STREAM_SYNC_STATUS_TOLERANCE_SECONDS = 0.1;
 const STREAM_SYNC_STALL_THRESHOLD_MS = 2_000;
-const STREAM_SYNC_TOLERANCE_SECONDS = 0.1;
+
+export function isStreamSyncAligned(errorSeconds: number) {
+  return (
+    Number.isFinite(errorSeconds) && Math.abs(errorSeconds) <= STREAM_SYNC_STATUS_TOLERANCE_SECONDS
+  );
+}
 
 export function calculateStreamSyncPlaybackRate(errorSeconds: number) {
-  if (!Number.isFinite(errorSeconds) || Math.abs(errorSeconds) <= STREAM_SYNC_TOLERANCE_SECONDS) {
+  if (!Number.isFinite(errorSeconds)) {
     return 1;
   }
 

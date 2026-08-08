@@ -4,6 +4,7 @@ import {
   calculateStreamSyncPlaybackRate,
   interpolateArchiveTime,
   interpolateStreamTime,
+  isStreamSyncAligned,
   projectStreamSyncTarget,
   streamTimeMessages,
   type StreamTimeRequest,
@@ -814,7 +815,7 @@ const streamTimeImplementation = {
 
       setSyncPlaybackRate(video, playbackRate);
 
-      if (playbackRate === 1) {
+      if (isStreamSyncAligned(errorSeconds)) {
         return "synced" as const;
       }
 

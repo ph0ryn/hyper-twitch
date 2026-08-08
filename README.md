@@ -75,10 +75,10 @@ archive timestamps do not require additional host permissions or an API.
 
 Stream sync adds a `Sync` button to the left of the live viewer count. Select it
 on two or more live streams to keep them at the same moment. Hyper Twitch never
-seeks the players. It checks drift every 100 ms and temporarily adjusts playback
-speed between 0.5× and 1.5× until streams are within 100 ms, then returns them to
-1×. The 100 ms threshold applies to Hyper Twitch's estimated wall-clock times.
-A single participating stream waits for another one.
+seeks the players. It checks drift every 100 ms and adjusts playback speed
+between 0.5× and 1.5× to converge toward zero drift. The UI reports synced once
+the estimated wall-clock times are within 100 ms, while correction continues
+toward zero. A single participating stream waits for another one.
 The wall-clock mapping remains approximate because Twitch does not expose an
 exact public live-player timeline.
 

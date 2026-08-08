@@ -6,6 +6,7 @@ import {
   calculateStreamSync,
   interpolateArchiveTime,
   interpolateStreamTime,
+  isStreamSyncAligned,
   parseMediaPlaylist,
   projectStreamSyncTarget,
 } from "./protocol.ts";
@@ -84,11 +85,20 @@ test("projects a ready sync target from its background calculation time", () => 
 
 test("adjusts playback speed toward the shared moment", () => {
   assert.equal(calculateStreamSyncPlaybackRate(0), 1);
-  assert.equal(calculateStreamSyncPlaybackRate(0.1), 1);
+  assert.equal(calculateStreamSyncPlaybackRate(0.01), 0.995);
+  assert.equal(calculateStreamSyncPlaybackRate(0.1), 0.95);
   assert.equal(calculateStreamSyncPlaybackRate(0.2), 0.9);
   assert.equal(calculateStreamSyncPlaybackRate(1), 0.5);
   assert.equal(calculateStreamSyncPlaybackRate(-0.2), 1.1);
   assert.equal(calculateStreamSyncPlaybackRate(-1), 1.5);
+});
+
+test("reports alignment independently from continued rate correction", () => {
+  assert.equal(isStreamSyncAligned(0), true);
+  assert.equal(isStreamSyncAligned(0.1), true);
+  assert.equal(isStreamSyncAligned(-0.1), true);
+  assert.equal(isStreamSyncAligned(0.101), false);
+  assert.equal(isStreamSyncAligned(Number.NaN), false);
 });
 
 test("selects the slowest current playback moment", () => {
