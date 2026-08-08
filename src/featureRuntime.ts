@@ -1,4 +1,5 @@
 import { featureDefinitions, getFeatureEnabledSetting, type FeatureId } from "./features";
+import { streamTimeRuntime } from "./streamTime/runtime";
 
 import type { ContentScriptContext } from "#imports";
 
@@ -8,7 +9,9 @@ export interface FeatureRuntime {
 
 export type FeatureRuntimeRegistry = Record<FeatureId, FeatureRuntime>;
 
-export const featureRuntimes: FeatureRuntimeRegistry = {};
+export const featureRuntimes: FeatureRuntimeRegistry = {
+  streamTime: streamTimeRuntime,
+};
 
 interface ActiveRuntime {
   controller: AbortController;

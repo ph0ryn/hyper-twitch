@@ -26,39 +26,61 @@ pnpm run dev
 
 ## Scripts
 
-| Command           | Description                                  |
-| ----------------- | -------------------------------------------- |
-| `pnpm run dev`    | Start WXT in development mode.               |
-| `pnpm run build`  | Build the extension into `.output/`.         |
-| `pnpm run zip`    | Create a distributable extension archive.    |
-| `pnpm run lint`   | Run ESLint and Oxlint with type checking.    |
-| `pnpm run format` | Format the repository with oxfmt.            |
-| `pnpm run fix`    | Apply Oxlint fixes, then format the project. |
+| Command           | Description                                   |
+| ----------------- | --------------------------------------------- |
+| `pnpm run dev`    | Start WXT in development mode.                |
+| `pnpm run build`  | Build the extension into `.output/`.          |
+| `pnpm run zip`    | Create a distributable extension archive.     |
+| `pnpm run lint`   | Run ESLint and Oxlint with type checking.     |
+| `pnpm run test`   | Run dependency-free logic tests with Node.js. |
+| `pnpm run format` | Format the repository with oxfmt.             |
+| `pnpm run fix`    | Apply Oxlint fixes, then format the project.  |
 
 ## Feature toggles
 
 The registry in `src/features.ts` is the source of truth for feature metadata,
 popup controls, and stored settings. Keep feature IDs stable and camelCase.
 
-Each feature setting uses `local:features.<featureId>.enabled` and defaults to
-`false`. To add a feature, register its metadata and matching content runtime
-in `src/features.ts` and `src/featureRuntime.ts`. A runtime must implement
-`mount(ctx, signal)` and return a cleanup function. The shared runner applies
-the initial state, watches changes, and cleans up on disable, Twitch SPA
-navigation, or extension invalidation.
+Each feature setting uses `local:features.<featureId>.enabled`. The metadata
+`defaultEnabled` value is only the fallback for a missing key; a stored value,
+including an explicit `false`, always wins. To add a feature, register its
+metadata and matching content runtime in `src/features.ts` and
+`src/featureRuntime.ts`. A runtime must implement `mount(ctx, signal)` and
+return a cleanup function. The shared runner applies the initial state, watches
+changes, and cleans up on disable, Twitch SPA navigation, or extension
+invalidation.
 
 The popup renders registered metadata automatically. Keep Twitch-side feature
-code out of the popup bundle; feature toggles use local storage directly, with
-no background service worker or message bus.
+code out of the popup bundle; feature toggles use local storage directly rather
+than a general background message bus.
+
+## Stream time
+
+Stream time shows the approximate wall-clock timestamp of the current live
+video or archive beside Twitch's stream controls. Live streams use HLS
+`EXT-X-PROGRAM-DATE-TIME` metadata. Archives use the Twitch VOD start metadata
+from the same-origin HTML plus the player's current position. The visible
+value includes `≈` and may temporarily show `syncing…` while metadata or a
+player timeline is not ready.
+
+Stream time is enabled by default when no setting has been saved. A popup
+choice always takes precedence. Twitch highlights and uploaded videos are not
+treated as stream archives.
+
+This feature has a narrowly scoped background worker because Twitch fetches HLS
+media outside the content script. The worker is used only for live HLS capture;
+archive timestamps do not require additional host permissions or an API.
 
 ## Project Layout
 
 ```text
 .
 ├── src/
+│   ├── streamTime/       # Stream timestamp capture and display
 │   ├── featureRuntime.ts # Content feature lifecycle
 │   └── features.ts       # Shared feature metadata and settings
 ├── entrypoints/
+│   ├── background/     # HLS timestamp capture
 │   ├── content/        # Twitch content script
 │   └── popup/          # Extension popup
 ├── wxt.config.ts       # WXT and manifest configuration
