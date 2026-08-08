@@ -17,6 +17,7 @@ import {
 } from "./protocol";
 
 const APPEND_GRACE_MS = 500;
+const ARCHIVE_FETCH_TIMEOUT_MS = 5_000;
 const HAVE_FUTURE_DATA = 3;
 const HAVE_METADATA = 1;
 const MAX_SEGMENT_AGE_MS = 15_000;
@@ -121,6 +122,23 @@ interface VodPlaybackMode {
 type PlaybackMode = LivePlaybackMode | VodPlaybackMode;
 type PlaybackKind = PlaybackMode["kind"];
 
+export type StreamTimelineSnapshot =
+  | {
+      anchor?: StreamTimeAnchor;
+      key: string;
+      kind: "live";
+      video: HTMLVideoElement;
+    }
+  | {
+      archiveStartMs: number | null | undefined;
+      key: string;
+      kind: "vod";
+      video: HTMLVideoElement;
+      videoId: string;
+    };
+
+export type StreamTimelineSubscriber = (snapshot: StreamTimelineSnapshot | undefined) => void;
+
 interface ClockPlacement {
   before?: HTMLElement;
   kind: PlaybackKind;
@@ -137,6 +155,7 @@ interface ClockElements {
 
 interface StreamTimeController {
   mountSyncControls(signal: AbortSignal): () => void;
+  subscribeTimeline(subscriber: StreamTimelineSubscriber, signal: AbortSignal): () => void;
 }
 
 interface SharedStreamTimeRuntime {
@@ -145,9 +164,15 @@ interface SharedStreamTimeRuntime {
   references: number;
 }
 
+interface StreamTimeReferenceOptions {
+  display?: boolean;
+  timeline?: boolean;
+}
+
 let activeStreamTimeController: StreamTimeController | undefined = undefined;
 let sharedStreamTimeRuntime: SharedStreamTimeRuntime | undefined = undefined;
 let streamTimeDisplayReferences = 0;
+let streamTimelineReferences = 0;
 
 function findNativeLiveTime() {
   return [...globalThis.document.querySelectorAll<HTMLElement>(".live-time")].find(
@@ -506,12 +531,22 @@ function parseArchiveStart(document: Document) {
 }
 
 async function fetchArchiveStart(videoId: string, signal: AbortSignal) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const timeoutId = globalThis.setTimeout(abort, ARCHIVE_FETCH_TIMEOUT_MS);
+
+  if (signal.aborted) {
+    controller.abort();
+  } else {
+    signal.addEventListener("abort", abort, { once: true });
+  }
+
   try {
     const url = new URL(`/videos/${videoId}`, globalThis.location.origin);
     const response = await globalThis.fetch(url, {
       cache: "no-store",
       credentials: "omit",
-      signal,
+      signal: controller.signal,
     });
 
     if (!response.ok) {
@@ -520,13 +555,16 @@ async function fetchArchiveStart(videoId: string, signal: AbortSignal) {
 
     const html = await response.text();
 
-    if (signal.aborted) {
+    if (controller.signal.aborted) {
       return null;
     }
 
     return parseArchiveStart(new globalThis.DOMParser().parseFromString(html, "text/html"));
   } catch {
     return null;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+    signal.removeEventListener("abort", abort);
   }
 }
 
@@ -561,8 +599,54 @@ const streamTimeImplementation = {
     let syncSignal: AbortSignal | undefined = undefined;
     let syncSoughtTarget: { targetAbsoluteMs: number; targetAtMs: number } | undefined = undefined;
     let syncTarget: { targetAbsoluteMs: number; targetAtMs: number } | undefined = undefined;
+    const timelineSubscribers = new Set<StreamTimelineSubscriber>();
 
     const isInactive = () => cleaned || signal.aborted;
+
+    const getTimelineSnapshot = (): StreamTimelineSnapshot | undefined => {
+      if (!currentMode || !currentVideo) {
+        return undefined;
+      }
+
+      if (currentMode.kind === "vod") {
+        return {
+          archiveStartMs: vodStartMs,
+          key: currentMode.key,
+          kind: currentMode.kind,
+          video: currentVideo,
+          videoId: currentMode.videoId,
+        };
+      }
+
+      const snapshot: StreamTimelineSnapshot = {
+        key: currentMode.key,
+        kind: currentMode.kind,
+        video: currentVideo,
+      };
+
+      if (anchor) {
+        snapshot.anchor = {
+          absoluteEndMs: anchor.absoluteEndMs,
+          mediaEnd: anchor.mediaEnd,
+        };
+      }
+
+      return snapshot;
+    };
+
+    const notifyTimelineSubscriber = (subscriber: StreamTimelineSubscriber) => {
+      try {
+        subscriber(getTimelineSnapshot());
+      } catch {
+        // A timeline consumer must not stop the shared stream-time runtime.
+      }
+    };
+
+    const notifyTimelineSubscribers = () => {
+      for (const subscriber of timelineSubscribers) {
+        notifyTimelineSubscriber(subscriber);
+      }
+    };
 
     const resetTimeline = () => {
       anchor = undefined;
@@ -953,6 +1037,32 @@ const streamTimeImplementation = {
       setSyncButtonState(applySyncTarget(video, anchor, syncTarget));
     };
 
+    const subscribeTimeline = (subscriber: StreamTimelineSubscriber, nextSignal: AbortSignal) => {
+      let detached = false;
+      const subscription: StreamTimelineSubscriber = (snapshot) => subscriber(snapshot);
+
+      const cleanup = () => {
+        if (detached) {
+          return;
+        }
+
+        detached = true;
+        nextSignal.removeEventListener("abort", cleanup);
+        timelineSubscribers.delete(subscription);
+      };
+
+      timelineSubscribers.add(subscription);
+      nextSignal.addEventListener("abort", cleanup, { once: true });
+
+      if (nextSignal.aborted) {
+        cleanup();
+      } else {
+        notifyTimelineSubscriber(subscription);
+      }
+
+      return cleanup;
+    };
+
     const mountSyncControls = (nextSignal: AbortSignal) => {
       if (syncControlsMounted) {
         return () => {};
@@ -1013,6 +1123,7 @@ const streamTimeImplementation = {
       currentMode = undefined;
       resetTimeline();
       removeClocks();
+      notifyTimelineSubscribers();
     };
 
     const subscribe = async (video: HTMLVideoElement) => {
@@ -1044,8 +1155,8 @@ const streamTimeImplementation = {
       return response === true;
     };
 
-    const updateVod = async (
-      clock: ClockElements,
+    const updateVod = (
+      clock: ClockElements | undefined,
       mode: VodPlaybackMode,
       video: HTMLVideoElement,
     ) => {
@@ -1056,17 +1167,20 @@ const streamTimeImplementation = {
 
         vodRequest = request;
 
-        const startMs = await request;
+        void request.then((startMs) => {
+          if (vodRequest !== request) {
+            return;
+          }
 
-        if (vodRequest === request) {
           vodRequest = undefined;
-        }
 
-        if (isInactive() || currentVideo !== video || currentMode?.key !== mode.key) {
-          return;
-        }
+          if (isInactive() || currentVideo !== video || currentMode?.key !== mode.key) {
+            return;
+          }
 
-        vodStartMs = startMs;
+          vodStartMs = startMs;
+          notifyTimelineSubscribers();
+        });
       }
 
       if (
@@ -1080,14 +1194,16 @@ const streamTimeImplementation = {
       ) {
         if (vodStartMs === null) {
           removeClocks();
-        } else {
+        } else if (clock) {
           renderClock(clock);
         }
 
         return;
       }
 
-      renderClock(clock, interpolateArchiveTime(vodStartMs, Math.max(0, video.currentTime)));
+      if (clock) {
+        renderClock(clock, interpolateArchiveTime(vodStartMs, Math.max(0, video.currentTime)));
+      }
     };
 
     const update = async () => {
@@ -1100,29 +1216,17 @@ const streamTimeImplementation = {
       try {
         const mode = findPlaybackMode();
         const video = findVideo();
+        const tracksTimeline =
+          streamTimeDisplayReferences > 0 ||
+          streamTimelineReferences > 0 ||
+          (mode.kind === "live" && syncControlsMounted);
 
-        if (mode.kind === "vod" && streamTimeDisplayReferences === 0) {
+        if (!tracksTimeline || !video) {
           deactivate();
 
           return;
         }
 
-        const placement = findClockPlacement(mode.kind);
-
-        if (!placement || !video) {
-          deactivate();
-
-          return;
-        }
-
-        if (mode.kind === "vod" && vodStartKey === mode.key && vodStartMs === null) {
-          resetSyncState();
-          removeClocks();
-
-          return;
-        }
-
-        const clock = ensureClock(placement);
         const modeChanged =
           currentMode === undefined ||
           currentMode.key !== mode.key ||
@@ -1143,28 +1247,59 @@ const streamTimeImplementation = {
           if (mode.kind === "vod") {
             resetVodStart(mode.key);
           }
+        }
 
-          renderClock(clock);
+        const canRenderClock =
+          mode.kind === "live" || vodStartKey !== mode.key || vodStartMs !== null;
+        const needsClock =
+          canRenderClock &&
+          (streamTimeDisplayReferences > 0 || (mode.kind === "live" && syncControlsMounted));
+        let clock: ClockElements | undefined = undefined;
 
-          if (mode.kind === "live") {
-            ensureSyncButton(clock);
-            subscribed = await subscribe(video);
+        if (needsClock) {
+          const placement = findClockPlacement(mode.kind);
 
-            return;
+          if (placement) {
+            try {
+              clock = ensureClock(placement);
+            } catch {
+              removeClocks();
+            }
+          } else {
+            removeClocks();
           }
+        } else {
+          removeClocks();
+        }
+
+        notifyTimelineSubscribers();
+
+        if (clock && modeChanged) {
+          renderClock(clock);
         }
 
         if (mode.kind === "vod") {
           resetSyncState();
-          await updateVod(clock, mode, video);
+          updateVod(clock, mode, video);
 
           return;
         }
 
-        ensureSyncButton(clock);
+        if (clock) {
+          ensureSyncButton(clock);
+        }
+
+        if (modeChanged) {
+          subscribed = await subscribe(video);
+
+          return;
+        }
 
         if (!subscribed) {
-          renderClock(clock);
+          if (clock) {
+            renderClock(clock);
+          }
+
           subscribed = await subscribe(video);
 
           if (!subscribed) {
@@ -1213,10 +1348,13 @@ const streamTimeImplementation = {
           };
 
           pendingSegment = undefined;
+          notifyTimelineSubscribers();
         }
 
         if (!anchor || !Number.isFinite(video.currentTime)) {
-          renderClock(clock);
+          if (clock) {
+            renderClock(clock);
+          }
 
           if (syncRequested) {
             setSyncButtonState("buffering");
@@ -1225,7 +1363,10 @@ const streamTimeImplementation = {
           return;
         }
 
-        renderClock(clock, interpolateStreamTime(anchor, video.currentTime));
+        if (clock) {
+          renderClock(clock, interpolateStreamTime(anchor, video.currentTime));
+        }
+
         await updateSync(video, anchor);
       } catch {
         removeClocks();
@@ -1234,7 +1375,7 @@ const streamTimeImplementation = {
       }
     };
 
-    const controller: StreamTimeController = { mountSyncControls };
+    const controller: StreamTimeController = { mountSyncControls, subscribeTimeline };
 
     activeStreamTimeController = controller;
 
@@ -1260,13 +1401,21 @@ const streamTimeImplementation = {
 
       syncControlsMounted = false;
       syncSignal = undefined;
+      timelineSubscribers.clear();
     };
   },
 };
 
-function acquireStreamTimeRuntime(ctx: ContentScriptContext, displaysArchives: boolean) {
-  if (displaysArchives) {
+function acquireStreamTimeRuntime(
+  ctx: ContentScriptContext,
+  { display = false, timeline = false }: StreamTimeReferenceOptions = {},
+) {
+  if (display) {
     streamTimeDisplayReferences += 1;
+  }
+
+  if (timeline) {
+    streamTimelineReferences += 1;
   }
 
   let shared = sharedStreamTimeRuntime;
@@ -1280,8 +1429,12 @@ function acquireStreamTimeRuntime(ctx: ContentScriptContext, displaysArchives: b
       sharedStreamTimeRuntime = shared;
     }
   } catch (error) {
-    if (displaysArchives) {
+    if (display) {
       streamTimeDisplayReferences -= 1;
+    }
+
+    if (timeline) {
+      streamTimelineReferences -= 1;
     }
 
     throw error;
@@ -1298,8 +1451,12 @@ function acquireStreamTimeRuntime(ctx: ContentScriptContext, displaysArchives: b
     released = true;
     shared.references -= 1;
 
-    if (displaysArchives) {
+    if (display) {
       streamTimeDisplayReferences -= 1;
+    }
+
+    if (timeline) {
+      streamTimelineReferences -= 1;
     }
 
     if (shared.references === 0 && sharedStreamTimeRuntime === shared) {
@@ -1310,15 +1467,52 @@ function acquireStreamTimeRuntime(ctx: ContentScriptContext, displaysArchives: b
   };
 }
 
+export function subscribeStreamTimeline(
+  ctx: ContentScriptContext,
+  signal: AbortSignal,
+  subscriber: StreamTimelineSubscriber,
+) {
+  const releaseStreamTime = acquireStreamTimeRuntime(ctx, { timeline: true });
+  const controller = activeStreamTimeController;
+
+  if (!controller) {
+    releaseStreamTime();
+
+    throw new Error("Shared stream-time controller is unavailable");
+  }
+
+  const unsubscribeTimeline = controller.subscribeTimeline(subscriber, signal);
+  let disposed = false;
+
+  const cleanup = () => {
+    if (disposed) {
+      return;
+    }
+
+    disposed = true;
+    signal.removeEventListener("abort", cleanup);
+    unsubscribeTimeline();
+    releaseStreamTime();
+  };
+
+  signal.addEventListener("abort", cleanup, { once: true });
+
+  if (signal.aborted) {
+    cleanup();
+  }
+
+  return cleanup;
+}
+
 export const streamTimeRuntime = {
   mount(ctx: ContentScriptContext, _signal: AbortSignal) {
-    return acquireStreamTimeRuntime(ctx, true);
+    return acquireStreamTimeRuntime(ctx, { display: true });
   },
 };
 
 export const streamSyncRuntime = {
   mount(ctx: ContentScriptContext, signal: AbortSignal) {
-    const releaseStreamTime = acquireStreamTimeRuntime(ctx, false);
+    const releaseStreamTime = acquireStreamTimeRuntime(ctx);
     const detachControls = activeStreamTimeController?.mountSyncControls(signal) ?? (() => {});
     let disposed = false;
 

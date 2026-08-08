@@ -17,6 +17,11 @@ export const featureDefinitions = {
     description: "Show the time of day in the stream.",
     label: "Show stream time",
   },
+  watchHistory: {
+    defaultEnabled: true,
+    description: "Show watched parts on archive seek bars.",
+    label: "Track watched sections",
+  },
 } as const satisfies Record<string, FeatureDefinition>;
 
 export type FeatureId = keyof typeof featureDefinitions;

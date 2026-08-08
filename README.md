@@ -90,16 +90,34 @@ popup setting off or closing a participating stream leaves the remaining
 playback position alone. It includes the live clock it needs, so it also works
 when Stream time is off.
 
+## Watch history
+
+Watch history records the parts that actually play in live streams and past
+broadcasts. It is enabled by default. Seeking over a section does not mark it as
+watched, and turning the feature off stops recording without deleting existing
+history.
+
+On a past broadcast, watched sections appear as a thin lavender strip at the
+bottom of Twitch's seek bar. Direct archive history is combined with matching
+live history when Twitch's internal metadata identifies the same broadcaster
+and broadcast time. Highlights, uploads, and clips are excluded.
+
+History stays in this browser's local extension storage and is not synced or
+expired automatically. Live-to-archive matching uses Twitch's private GraphQL
+API and safely falls back to direct archive history if that API changes or is
+unavailable.
+
 ## Project Layout
 
 ```text
 .
 ├── src/
 │   ├── streamTime/       # Stream timestamp capture and display
+│   ├── watchHistory/     # Watched-range storage and seek-bar display
 │   ├── featureRuntime.ts # Content feature lifecycle
 │   └── features.ts       # Shared feature metadata and settings
 ├── entrypoints/
-│   ├── background/     # HLS timestamp capture
+│   ├── background/     # HLS capture and watch-history metadata
 │   ├── content/        # Twitch content script
 │   └── popup/          # Extension popup
 ├── wxt.config.ts       # WXT and manifest configuration

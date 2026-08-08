@@ -1,5 +1,6 @@
 import { featureDefinitions, getFeatureEnabledSetting, type FeatureId } from "./features";
 import { streamSyncRuntime, streamTimeRuntime } from "./streamTime/runtime";
+import { watchHistoryRuntime } from "./watchHistory/runtime";
 
 import type { ContentScriptContext } from "#imports";
 
@@ -12,6 +13,7 @@ export type FeatureRuntimeRegistry = Record<FeatureId, FeatureRuntime>;
 export const featureRuntimes: FeatureRuntimeRegistry = {
   streamSync: streamSyncRuntime,
   streamTime: streamTimeRuntime,
+  watchHistory: watchHistoryRuntime,
 };
 
 interface ActiveRuntime {

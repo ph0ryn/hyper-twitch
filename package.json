@@ -12,7 +12,7 @@
     "postinstall": "git config core.hooksPath .githooks && wxt prepare",
     "lint": "eslint && oxlint",
     "precommit": "pnpm run fix && eslint",
-    "test": "node --test src/streamTime/protocol.test.mjs",
+    "test": "node --test src/streamTime/protocol.test.mjs src/watchHistory/model.test.mjs src/watchHistory/protocol.test.mjs",
     "zip": "wxt zip"
   },
   "devDependencies": {
