@@ -10,7 +10,7 @@ import {
   parseLiveWatchMetadata,
   parseVodWatchMetadata,
   watchHistoryMessages,
-} from "./protocol.ts";
+} from "../../src/utils/watchHistory/protocol.ts";
 
 test("parses live metadata and rejects a response for another login", () => {
   const payload = {

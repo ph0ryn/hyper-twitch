@@ -9,7 +9,7 @@ import {
   type StreamSyncReport,
   type StreamSyncTargetState,
   type StreamTimeSegment,
-} from "./protocol";
+} from "../../utils/streamTime/protocol";
 
 const HLS_URLS = ["https://*.ttvnw.net/*"];
 const MAX_ENTRIES = 512;

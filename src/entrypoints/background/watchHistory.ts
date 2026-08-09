@@ -7,7 +7,7 @@ import {
   type LiveWatchRecord,
   type LiveWatchStreamRecord,
   type VodWatchRecord,
-} from "./model";
+} from "../../utils/watchHistory/model";
 import {
   isValidProvisionalId,
   isWatchHistoryRequest,
@@ -22,7 +22,7 @@ import {
   type MergeLiveRangesRequest,
   type MergeVodRangesRequest,
   type VodWatchMetadata,
-} from "./protocol";
+} from "../../utils/watchHistory/protocol";
 
 const GQL_ENDPOINT = "https://gql.twitch.tv/gql";
 const TWITCH_WEB_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko";

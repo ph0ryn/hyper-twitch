@@ -10,7 +10,7 @@ import {
   isStreamSyncAligned,
   parseMediaPlaylist,
   projectStreamSyncTarget,
-} from "./protocol.ts";
+} from "../../src/utils/streamTime/protocol.ts";
 
 function syncParticipant(overrides = {}) {
   const report = {

@@ -14,7 +14,7 @@ import {
   type StreamTimeSegment,
   type StreamSyncReport,
   type StreamSyncResponse,
-} from "./protocol";
+} from "../../utils/streamTime/protocol";
 
 const APPEND_GRACE_MS = 500;
 const HAVE_FUTURE_DATA = 3;

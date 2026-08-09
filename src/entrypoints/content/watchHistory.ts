@@ -1,6 +1,5 @@
 import { browser, storage, type ContentScriptContext, type StorageItemKey } from "#imports";
 
-import { subscribeStreamTimeline, type StreamTimelineSnapshot } from "../streamTime/runtime";
 import {
   isLiveWatchRecord,
   isVodWatchRecord,
@@ -15,14 +14,15 @@ import {
   type LiveWatchRecord,
   type WatchRange,
   type VodWatchRecord,
-} from "./model";
+} from "../../utils/watchHistory/model";
 import {
   isVodWatchMetadata,
   watchHistoryMessages,
   watchHistoryStorageKeys,
   type VodWatchMetadata,
   type WatchHistoryRequest,
-} from "./protocol";
+} from "../../utils/watchHistory/protocol";
+import { subscribeStreamTimeline, type StreamTimelineSnapshot } from "./streamTime";
 
 const FLUSH_INTERVAL_MS = 10_000;
 const FLUSH_RETRY_MS = 5_000;

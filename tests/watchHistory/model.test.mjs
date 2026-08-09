@@ -13,7 +13,7 @@ import {
   timeRangesToWatchRanges,
   toVodWatchRanges,
   watchRangeToOverlay,
-} from "./model.ts";
+} from "../../src/utils/watchHistory/model.ts";
 
 const anchor = { absoluteEndMs: 1_700_000_010_000, mediaEnd: 100 };
 

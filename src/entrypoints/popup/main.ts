@@ -2,7 +2,7 @@ import {
   featureDefinitions,
   getFeatureEnabledSetting,
   type FeatureDefinition,
-} from "../../src/features";
+} from "../../utils/features";
 
 type FeatureId = keyof typeof featureDefinitions;
 type FeatureSetting = ReturnType<typeof getFeatureEnabledSetting>;

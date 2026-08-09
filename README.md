@@ -38,14 +38,14 @@ pnpm run dev
 
 ## Feature toggles
 
-The registry in `src/features.ts` is the source of truth for feature metadata,
+The registry in `src/utils/features.ts` is the source of truth for feature metadata,
 popup controls, and stored settings. Keep feature IDs stable and camelCase.
 
 Each feature setting uses `local:features.<featureId>.enabled`. The metadata
 `defaultEnabled` value is only the fallback for a missing key; a stored value,
 including an explicit `false`, always wins. To add a feature, register its
-metadata and matching content runtime in `src/features.ts` and
-`src/featureRuntime.ts`. A runtime must implement `mount(ctx, signal)` and
+metadata and matching content runtime in `src/utils/features.ts` and
+`src/entrypoints/content/featureRuntime.ts`. A runtime must implement `mount(ctx, signal)` and
 return a cleanup function. The shared runner applies the initial state, watches
 changes, and cleans up on disable, Twitch SPA navigation, or extension
 invalidation.
@@ -113,14 +113,12 @@ unavailable.
 ```text
 .
 ├── src/
-│   ├── streamTime/       # Stream timestamp capture and display
-│   ├── watchHistory/     # Watched-range storage and seek-bar display
-│   ├── featureRuntime.ts # Content feature lifecycle
-│   └── features.ts       # Shared feature metadata and settings
-├── entrypoints/
-│   ├── background/     # HLS capture and watch-history metadata
-│   ├── content/        # Twitch content script
-│   └── popup/          # Extension popup
+│   ├── entrypoints/
+│   │   ├── background/ # HLS capture and watch-history metadata
+│   │   ├── content/    # Twitch content script and feature runtimes
+│   │   └── popup/      # Extension popup
+│   └── utils/          # Shared feature definitions, protocols, and models
+├── tests/              # Dependency-free logic tests
 ├── wxt.config.ts       # WXT and manifest configuration
 ├── package.json        # Project metadata and scripts
 └── tsconfig.json       # WXT-generated TypeScript configuration bridge

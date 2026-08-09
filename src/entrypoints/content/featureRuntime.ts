@@ -1,6 +1,6 @@
-import { featureDefinitions, getFeatureEnabledSetting, type FeatureId } from "./features";
-import { streamSyncRuntime, streamTimeRuntime } from "./streamTime/runtime";
-import { watchHistoryRuntime } from "./watchHistory/runtime";
+import { featureDefinitions, getFeatureEnabledSetting, type FeatureId } from "../../utils/features";
+import { streamSyncRuntime, streamTimeRuntime } from "./streamTime";
+import { watchHistoryRuntime } from "./watchHistory";
 
 import type { ContentScriptContext } from "#imports";
 

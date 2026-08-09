@@ -11,4 +11,5 @@ export default defineConfig({
     name: "Hyper Twitch",
     permissions: ["storage", "webRequest"],
   },
+  srcDir: "src",
 });

@@ -27,12 +27,13 @@ Run all commands from the repository root.
 | Build                | `pnpm run build`  |
 | Package              | `pnpm run zip`    |
 | Lint                 | `pnpm run lint`   |
+| Test                 | `pnpm run test`   |
 | Format               | `pnpm run format` |
 | Autofix              | `pnpm run fix`    |
 
-There is currently no `test` or separate `typecheck` script. `pnpm run lint`
-already runs Oxlint with type-aware type checking. Check `package.json` before
-adding or running new lifecycle commands.
+There is currently no separate `typecheck` script. `pnpm run lint` already runs
+Oxlint with type-aware type checking. Check `package.json` before adding or
+running new lifecycle commands.
 
 ## Editing Rules
 
@@ -41,7 +42,7 @@ adding or running new lifecycle commands.
 - Preserve pnpm workspace catalog usage in `pnpm-workspace.yaml` when updating
   dependencies. Keep WXT in `devDependencies`.
 - Prefer small, direct changes over new abstractions.
-- Put extension entrypoints under `entrypoints/` using WXT's naming rules.
+- Put extension entrypoints under `src/entrypoints/` using WXT's naming rules.
 - Do not edit generated files under `.wxt/` or `.output/`.
 - Keep user-facing project instructions in `README.md`; keep agent workflow notes
   in this file.
