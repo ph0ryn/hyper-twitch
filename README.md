@@ -97,10 +97,10 @@ broadcasts. It is enabled by default. Seeking over a section does not mark it as
 watched, and turning the feature off stops recording without deleting existing
 history.
 
-On a past broadcast, watched sections appear as a thin lavender strip at the
-bottom of Twitch's seek bar. Direct archive history is combined with matching
-live history when Twitch's internal metadata identifies the same broadcaster
-and broadcast time. Highlights, uploads, and clips are excluded.
+On a past broadcast, watched sections replace those portions of Twitch's seek
+bar with bright cyan. Direct archive history is combined with matching live
+history when Twitch's internal metadata identifies the same broadcaster and
+broadcast time. Highlights, uploads, and clips are excluded.
 
 History stays in this browser's local extension storage and is not synced or
 expired automatically. Live-to-archive matching uses Twitch's private GraphQL

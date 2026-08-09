@@ -27,6 +27,8 @@ const FLUSH_INTERVAL_MS = 10_000;
 const FLUSH_RETRY_MS = 5_000;
 const OVERLAY_SELECTOR = "[data-hyper-twitch-watch-history]";
 const SEEK_BAR_SELECTOR = '[data-test-selector="seekbar-interaction-area__interactionArea"]';
+const SEEK_BAR_TRACK_SELECTOR = ".seekbar-bar";
+const WATCHED_SEGMENT_COLOR = "#00e5ff";
 
 type PendingWrite =
   | {
@@ -85,14 +87,23 @@ function findLiveLogin(snapshot: Extract<StreamTimelineSnapshot, { kind: "live" 
 function findSeekBar(video: HTMLVideoElement) {
   const player = video.closest<HTMLElement>('[data-a-target="video-player"]');
   const scoped = player?.querySelector<HTMLElement>(SEEK_BAR_SELECTOR);
+  const scopedTrack = scoped?.querySelector<HTMLElement>(SEEK_BAR_TRACK_SELECTOR);
 
-  if (scoped) {
-    return scoped;
+  if (scopedTrack && scopedTrack.getClientRects().length > 0) {
+    return scopedTrack;
   }
 
-  return [...globalThis.document.querySelectorAll<HTMLElement>(SEEK_BAR_SELECTOR)].find(
-    (element) => element.getClientRects().length > 0,
-  );
+  for (const interactionArea of globalThis.document.querySelectorAll<HTMLElement>(
+    SEEK_BAR_SELECTOR,
+  )) {
+    const track = interactionArea.querySelector<HTMLElement>(SEEK_BAR_TRACK_SELECTOR);
+
+    if (track && track.getClientRects().length > 0) {
+      return track;
+    }
+  }
+
+  return undefined;
 }
 
 function removeOverlays() {
@@ -143,7 +154,7 @@ function renderOverlay(
   }
 
   const segments = watchRangesToOverlay(ranges, durationMs);
-  const renderKey = JSON.stringify(segments);
+  const renderKey = `cyan-full:${JSON.stringify(segments)}`;
 
   if (overlay.dataset.renderKey === renderKey) {
     return;
@@ -155,11 +166,12 @@ function renderOverlay(
   for (const segment of segments) {
     const marker = globalThis.document.createElement("span");
 
-    marker.style.background = "var(--color-background-accent-alt, #bf94ff)";
-    marker.style.blockSize = "2px";
-    marker.style.insetBlockEnd = "0";
+    marker.style.background = WATCHED_SEGMENT_COLOR;
+    marker.style.blockSize = "100%";
+    marker.style.insetBlockStart = "0";
     marker.style.insetInlineStart = `${segment.leftPercent}%`;
     marker.style.inlineSize = `${segment.widthPercent}%`;
+    marker.style.minInlineSize = "1px";
     marker.style.position = "absolute";
     overlay.append(marker);
   }
