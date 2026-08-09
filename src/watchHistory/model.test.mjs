@@ -7,6 +7,7 @@ import {
   liveMediaRangesToUtcRanges,
   mergeWatchRanges,
   normalizeLogin,
+  playbackTimestampToMs,
   sanitizeWatchRanges,
   subtractWatchRanges,
   timeRangesToWatchRanges,
@@ -20,6 +21,13 @@ test("normalizes Twitch logins", () => {
   assert.equal(normalizeLogin("  Some_Channel "), "some_channel");
   assert.equal(normalizeLogin(""), null);
   assert.equal(normalizeLogin("not valid"), null);
+});
+
+test("parses playback timestamps from hover previews", () => {
+  assert.equal(playbackTimestampToMs("06:39:16"), 23_956_000);
+  assert.equal(playbackTimestampToMs("5:00"), 300_000);
+  assert.equal(playbackTimestampToMs("01:60"), null);
+  assert.equal(playbackTimestampToMs("not a timestamp"), null);
 });
 
 test("sanitizes and merges finite integer ranges", () => {

@@ -7,6 +7,7 @@ import {
   liveMediaRangesToUtcRanges,
   mergeWatchRanges,
   normalizeLogin,
+  playbackTimestampToMs,
   subtractWatchRanges,
   timeRangesToWatchRanges,
   toVodWatchRanges,
@@ -26,6 +27,9 @@ import {
 const FLUSH_INTERVAL_MS = 10_000;
 const FLUSH_RETRY_MS = 5_000;
 const OVERLAY_SELECTOR = "[data-hyper-twitch-watch-history]";
+const PREVIEW_IMAGE_SELECTOR = '[data-test-selector="vod-seekbar-preview-overlay-preview-image"]';
+const PREVIEW_INDICATOR_SELECTOR = "[data-hyper-twitch-watch-history-preview]";
+const PREVIEW_WRAPPER_SELECTOR = ".vod-seekbar-preview-overlay__wrapper";
 const SEEK_BAR_SELECTOR = '[data-test-selector="seekbar-interaction-area__interactionArea"]';
 const SEEK_BAR_TRACK_SELECTOR = ".seekbar-bar";
 const WATCHED_SEGMENT_COLOR = "#00e5ff";
@@ -106,8 +110,65 @@ function findSeekBar(video: HTMLVideoElement) {
   return undefined;
 }
 
+function removePreviewIndicators() {
+  globalThis.document
+    .querySelectorAll(PREVIEW_INDICATOR_SELECTOR)
+    .forEach((element) => element.remove());
+}
+
 function removeOverlays() {
   globalThis.document.querySelectorAll(OVERLAY_SELECTOR).forEach((element) => element.remove());
+  removePreviewIndicators();
+}
+
+function renderPreviewIndicator(video: HTMLVideoElement, ranges: readonly WatchRange[]) {
+  const player = video.closest<HTMLElement>('[data-a-target="video-player"]');
+  let previewImage: HTMLElement | undefined = undefined;
+  let timestampMs: number | null = null;
+
+  for (const wrapper of player?.querySelectorAll<HTMLElement>(PREVIEW_WRAPPER_SELECTOR) ?? []) {
+    const image = wrapper.querySelector<HTMLElement>(PREVIEW_IMAGE_SELECTOR);
+    const timestamp = playbackTimestampToMs(wrapper.querySelector("p")?.textContent);
+
+    if (image && image.getClientRects().length > 0 && timestamp !== null) {
+      previewImage = image;
+      timestampMs = timestamp;
+
+      break;
+    }
+  }
+
+  let indicator = previewImage?.querySelector<HTMLElement>(PREVIEW_INDICATOR_SELECTOR);
+
+  for (const existing of globalThis.document.querySelectorAll<HTMLElement>(
+    PREVIEW_INDICATOR_SELECTOR,
+  )) {
+    if (existing !== indicator) {
+      existing.remove();
+    }
+  }
+
+  const watched =
+    timestampMs !== null &&
+    ranges.some(([startMs, endMs]) => startMs < timestampMs + 1_000 && endMs > timestampMs);
+
+  if (!previewImage || !watched) {
+    indicator?.remove();
+
+    return;
+  }
+
+  if (!indicator) {
+    indicator = globalThis.document.createElement("span");
+    indicator.dataset.hyperTwitchWatchHistoryPreview = "";
+    indicator.setAttribute("aria-hidden", "true");
+    indicator.style.boxShadow = `inset 0 0 0 3px ${WATCHED_SEGMENT_COLOR}`;
+    indicator.style.inset = "0";
+    indicator.style.pointerEvents = "none";
+    indicator.style.position = "absolute";
+    indicator.style.zIndex = "2";
+    previewImage.append(indicator);
+  }
 }
 
 function createOverlay(anchor: HTMLElement) {
@@ -135,8 +196,16 @@ function renderOverlay(
   const durationMs = Math.round(snapshot.video.duration * 1_000);
   const anchor = findSeekBar(snapshot.video);
 
-  if (!anchor || !Number.isFinite(durationMs) || durationMs <= 0) {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
     removeOverlays();
+
+    return;
+  }
+
+  renderPreviewIndicator(snapshot.video, ranges);
+
+  if (!anchor) {
+    globalThis.document.querySelectorAll(OVERLAY_SELECTOR).forEach((element) => element.remove());
 
     return;
   }

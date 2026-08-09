@@ -100,7 +100,8 @@ history.
 On a past broadcast, watched sections replace those portions of Twitch's seek
 bar with bright cyan. Direct archive history is combined with matching live
 history when Twitch's internal metadata identifies the same broadcaster and
-broadcast time. Highlights, uploads, and clips are excluded.
+broadcast time. Hover previews use the same cyan outline when the selected
+moment has been watched. Highlights, uploads, and clips are excluded.
 
 History stays in this browser's local extension storage and is not synced or
 expired automatically. Live-to-archive matching uses Twitch's private GraphQL

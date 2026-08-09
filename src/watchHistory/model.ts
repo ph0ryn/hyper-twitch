@@ -105,6 +105,38 @@ export function normalizeLogin(value: unknown): string | null {
   return login;
 }
 
+export function playbackTimestampToMs(value: unknown): number | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const parts = value.trim().split(":");
+
+  if (parts.length < 2 || parts.length > 3 || parts.some((part) => !/^\d+$/.test(part))) {
+    return null;
+  }
+
+  const seconds = Number(parts.at(-1));
+  const minutes = Number(parts.at(-2));
+  let hours = 0;
+
+  if (parts.length === 3) {
+    hours = Number(parts[0]);
+  }
+
+  if (seconds >= 60 || minutes >= 60) {
+    return null;
+  }
+
+  const timestampMs = (hours * 3_600 + minutes * 60 + seconds) * 1_000;
+
+  if (!Number.isSafeInteger(timestampMs)) {
+    return null;
+  }
+
+  return timestampMs;
+}
+
 export function mergeWatchRanges(
   ranges: readonly WatchRange[],
   mergeGapMs = WATCH_RANGE_MERGE_GAP_MS,
