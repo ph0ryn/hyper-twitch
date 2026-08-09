@@ -17,7 +17,6 @@ import {
 } from "./protocol";
 
 const APPEND_GRACE_MS = 500;
-const ARCHIVE_FETCH_TIMEOUT_MS = 5_000;
 const HAVE_FUTURE_DATA = 3;
 const HAVE_METADATA = 1;
 const MAX_SEGMENT_AGE_MS = 15_000;
@@ -463,10 +462,27 @@ function parseTimestamp(value: unknown) {
   return undefined;
 }
 
-function findVideoObjectStart(value: unknown): number | undefined {
+function isVideoObjectForId(object: Record<string, unknown>, videoId: string) {
+  return [object.embedUrl, object.url].some((value) => {
+    if (typeof value !== "string") {
+      return false;
+    }
+
+    try {
+      const url = new URL(value, globalThis.location.origin);
+      const pathname = url.pathname.replace(/\/+$/, "");
+
+      return url.origin === globalThis.location.origin && pathname === `/videos/${videoId}`;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function findVideoObjectStart(value: unknown, videoId?: string): number | undefined {
   if (Array.isArray(value)) {
     for (const item of value) {
-      const timestamp = findVideoObjectStart(item);
+      const timestamp = findVideoObjectStart(item, videoId);
 
       if (timestamp !== undefined) {
         return timestamp;
@@ -485,7 +501,7 @@ function findVideoObjectStart(value: unknown): number | undefined {
   const isVideoObject =
     type === "VideoObject" || (Array.isArray(type) && type.includes("VideoObject"));
 
-  if (isVideoObject) {
+  if (isVideoObject && (videoId === undefined || isVideoObjectForId(object, videoId))) {
     const timestamp = parseTimestamp(object.uploadDate);
 
     if (timestamp !== undefined) {
@@ -493,7 +509,7 @@ function findVideoObjectStart(value: unknown): number | undefined {
     }
   }
 
-  return findVideoObjectStart(object["@graph"]);
+  return findVideoObjectStart(object["@graph"], videoId);
 }
 
 function parseArchiveStart(document: Document) {
@@ -530,15 +546,57 @@ function parseArchiveStart(document: Document) {
   return null;
 }
 
-async function fetchArchiveStart(videoId: string, signal: AbortSignal) {
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-  const timeoutId = globalThis.setTimeout(abort, ARCHIVE_FETCH_TIMEOUT_MS);
+function parseCurrentArchiveStart(videoId: string) {
+  const canonicalHref = globalThis.document
+    .querySelector('link[rel="canonical"]')
+    ?.getAttribute("href");
 
-  if (signal.aborted) {
-    controller.abort();
-  } else {
-    signal.addEventListener("abort", abort, { once: true });
+  if (!canonicalHref) {
+    return null;
+  }
+
+  try {
+    const canonicalUrl = new URL(canonicalHref, globalThis.location.origin);
+
+    const pathname = canonicalUrl.pathname.replace(/\/+$/, "");
+
+    if (canonicalUrl.origin !== globalThis.location.origin || pathname !== `/videos/${videoId}`) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  const contentType = globalThis.document
+    .querySelector('meta[name="amazonbot-content-type"]')
+    ?.getAttribute("content")
+    ?.trim()
+    .toLowerCase();
+
+  if (contentType !== "vod") {
+    return null;
+  }
+
+  for (const script of globalThis.document.querySelectorAll('script[type="application/ld+json"]')) {
+    try {
+      const timestamp = findVideoObjectStart(JSON.parse(script.textContent), videoId);
+
+      if (timestamp !== undefined) {
+        return timestamp;
+      }
+    } catch {
+      // Twitch can include non-JSON script content with this MIME type.
+    }
+  }
+
+  return null;
+}
+
+async function fetchArchiveStart(videoId: string, signal: AbortSignal) {
+  const currentStartMs = parseCurrentArchiveStart(videoId);
+
+  if (currentStartMs !== null) {
+    return currentStartMs;
   }
 
   try {
@@ -546,7 +604,7 @@ async function fetchArchiveStart(videoId: string, signal: AbortSignal) {
     const response = await globalThis.fetch(url, {
       cache: "no-store",
       credentials: "omit",
-      signal: controller.signal,
+      signal,
     });
 
     if (!response.ok) {
@@ -555,16 +613,13 @@ async function fetchArchiveStart(videoId: string, signal: AbortSignal) {
 
     const html = await response.text();
 
-    if (controller.signal.aborted) {
+    if (signal.aborted) {
       return null;
     }
 
     return parseArchiveStart(new globalThis.DOMParser().parseFromString(html, "text/html"));
   } catch {
     return null;
-  } finally {
-    globalThis.clearTimeout(timeoutId);
-    signal.removeEventListener("abort", abort);
   }
 }
 
