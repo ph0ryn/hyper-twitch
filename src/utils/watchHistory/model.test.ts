@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, test } from "vitest";
 
 import {
   isLiveWatchRecord,
@@ -13,21 +12,24 @@ import {
   timeRangesToWatchRanges,
   toVodWatchRanges,
   watchRangeToOverlay,
-} from "../../src/utils/watchHistory/model.ts";
+  type LiveWatchRecord,
+  type TimeRangesLike,
+  type VodWatchRecord,
+} from "./model.ts";
 
 const anchor = { absoluteEndMs: 1_700_000_010_000, mediaEnd: 100 };
 
 test("normalizes Twitch logins", () => {
-  assert.equal(normalizeLogin("  Some_Channel "), "some_channel");
-  assert.equal(normalizeLogin(""), null);
-  assert.equal(normalizeLogin("not valid"), null);
+  assert.strictEqual(normalizeLogin("  Some_Channel "), "some_channel");
+  assert.strictEqual(normalizeLogin(""), null);
+  assert.strictEqual(normalizeLogin("not valid"), null);
 });
 
 test("parses playback timestamps from hover previews", () => {
-  assert.equal(playbackTimestampToMs("06:39:16"), 23_956_000);
-  assert.equal(playbackTimestampToMs("5:00"), 300_000);
-  assert.equal(playbackTimestampToMs("01:60"), null);
-  assert.equal(playbackTimestampToMs("not a timestamp"), null);
+  assert.strictEqual(playbackTimestampToMs("06:39:16"), 23_956_000);
+  assert.strictEqual(playbackTimestampToMs("5:00"), 300_000);
+  assert.strictEqual(playbackTimestampToMs("01:60"), null);
+  assert.strictEqual(playbackTimestampToMs("not a timestamp"), null);
 });
 
 test("sanitizes and merges finite integer ranges", () => {
@@ -71,7 +73,7 @@ test("sanitizes and merges finite integer ranges", () => {
 });
 
 test("converts TimeRanges-like seconds to relative milliseconds", () => {
-  const timeRanges = {
+  const timeRanges: TimeRangesLike = {
     end(index) {
       if (index === 0) {
         return 1.25;
@@ -151,14 +153,14 @@ test("maps live media ranges to UTC using the stream anchor", () => {
 });
 
 test("combines direct VOD ranges with matching live ranges and clips to duration", () => {
-  const directRecord = {
+  const directRecord: VodWatchRecord = {
     kind: "vod",
     ranges: [[10_000, 20_000]],
     updatedAt: 1_700_000_100_000,
     version: 1,
     videoId: "123",
   };
-  const liveRecord = {
+  const liveRecord: LiveWatchRecord = {
     kind: "live",
     login: "creator",
     ownerId: "42",
@@ -191,7 +193,7 @@ test("combines direct VOD ranges with matching live ranges and clips to duration
 });
 
 test("uses login for provisional live records but excludes owner mismatches", () => {
-  const liveRecord = {
+  const liveRecord: LiveWatchRecord = {
     kind: "live",
     login: "creator",
     streams: {
@@ -233,11 +235,11 @@ test("returns overlay percentages after clipping", () => {
     widthPercent: 50,
   });
 
-  assert.equal(watchRangeToOverlay([0, 1_000], 0), null);
+  assert.strictEqual(watchRangeToOverlay([0, 1_000], 0), null);
 });
 
 test("validates versioned stored records", () => {
-  assert.equal(
+  assert.strictEqual(
     isVodWatchRecord({
       kind: "vod",
       ranges: [[0, 1_000]],
@@ -248,7 +250,7 @@ test("validates versioned stored records", () => {
     true,
   );
 
-  assert.equal(
+  assert.strictEqual(
     isVodWatchRecord({
       kind: "vod",
       ranges: [],
@@ -259,7 +261,7 @@ test("validates versioned stored records", () => {
     false,
   );
 
-  assert.equal(
+  assert.strictEqual(
     isLiveWatchRecord({
       kind: "live",
       login: "creator",
@@ -272,7 +274,7 @@ test("validates versioned stored records", () => {
     true,
   );
 
-  assert.equal(
+  assert.strictEqual(
     isLiveWatchRecord({
       kind: "live",
       login: "Creator",

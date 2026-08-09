@@ -26,15 +26,15 @@ pnpm run dev
 
 ## Scripts
 
-| Command           | Description                                   |
-| ----------------- | --------------------------------------------- |
-| `pnpm run dev`    | Start WXT in development mode.                |
-| `pnpm run build`  | Build the extension into `.output/`.          |
-| `pnpm run zip`    | Create a distributable extension archive.     |
-| `pnpm run lint`   | Run ESLint and Oxlint with type checking.     |
-| `pnpm run test`   | Run dependency-free logic tests with Node.js. |
-| `pnpm run format` | Format the repository with oxfmt.             |
-| `pnpm run fix`    | Apply Oxlint fixes, then format the project.  |
+| Command           | Description                                  |
+| ----------------- | -------------------------------------------- |
+| `pnpm run dev`    | Start WXT in development mode.               |
+| `pnpm run build`  | Build the extension into `.output/`.         |
+| `pnpm run zip`    | Create a distributable extension archive.    |
+| `pnpm run lint`   | Run ESLint and Oxlint with type checking.    |
+| `pnpm run test`   | Run unit tests with Vitest.                  |
+| `pnpm run format` | Format the repository with oxfmt.            |
+| `pnpm run fix`    | Apply Oxlint fixes, then format the project. |
 
 ## Feature toggles
 
@@ -118,7 +118,7 @@ unavailable.
 │   │   ├── content/    # Twitch content script and feature runtimes
 │   │   └── popup/      # Extension popup
 │   └── utils/          # Shared feature definitions, protocols, and models
-├── tests/              # Dependency-free logic tests
+├── vitest.config.ts    # Vitest and WXT test configuration
 ├── wxt.config.ts       # WXT and manifest configuration
 ├── package.json        # Project metadata and scripts
 └── tsconfig.json       # WXT-generated TypeScript configuration bridge

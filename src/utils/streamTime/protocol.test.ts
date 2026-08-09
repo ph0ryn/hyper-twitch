@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, test } from "vitest";
 
 import {
   calculateStreamSyncPlaybackRate,
@@ -10,7 +9,7 @@ import {
   isStreamSyncAligned,
   parseMediaPlaylist,
   projectStreamSyncTarget,
-} from "../../src/utils/streamTime/protocol.ts";
+} from "./protocol.ts";
 
 function syncParticipant(overrides = {}) {
   const report = {
@@ -62,14 +61,14 @@ test("parses consecutive HLS program times and resolves segment URLs", () => {
 });
 
 test("interpolates the stream timestamp from the media timeline", () => {
-  assert.equal(
+  assert.strictEqual(
     interpolateStreamTime({ absoluteEndMs: 1_700_000_010_000, mediaEnd: 120.5 }, 122.25),
     1_700_000_011_750,
   );
 });
 
 test("interpolates the archive timestamp from its start time", () => {
-  assert.equal(interpolateArchiveTime(1_700_000_000_000, 122.25), 1_700_000_122_250);
+  assert.strictEqual(interpolateArchiveTime(1_700_000_000_000, 122.25), 1_700_000_122_250);
 });
 
 test("waits for a second sync participant", () => {
@@ -80,40 +79,40 @@ test("waits for a second sync participant", () => {
 });
 
 test("projects a ready sync target from its background calculation time", () => {
-  assert.equal(projectStreamSyncTarget(86_000, 100_000, 100_125), 86_125);
-  assert.equal(projectStreamSyncTarget(86_000, 100_000, 99_875), 86_000);
+  assert.strictEqual(projectStreamSyncTarget(86_000, 100_000, 100_125), 86_125);
+  assert.strictEqual(projectStreamSyncTarget(86_000, 100_000, 99_875), 86_000);
 });
 
 test("recognizes updates to the same moving sync target", () => {
   const previous = { targetAbsoluteMs: 86_000, targetAtMs: 100_000 };
 
-  assert.equal(
+  assert.strictEqual(
     isSameStreamSyncTargetLine(previous, { targetAbsoluteMs: 86_500, targetAtMs: 100_500 }),
     true,
   );
 
-  assert.equal(
+  assert.strictEqual(
     isSameStreamSyncTargetLine(previous, { targetAbsoluteMs: 84_500, targetAtMs: 100_500 }),
     false,
   );
 });
 
 test("adjusts playback speed toward the shared moment", () => {
-  assert.equal(calculateStreamSyncPlaybackRate(0), 1);
-  assert.equal(calculateStreamSyncPlaybackRate(0.01), 0.995);
-  assert.equal(calculateStreamSyncPlaybackRate(0.1), 0.95);
-  assert.equal(calculateStreamSyncPlaybackRate(0.2), 0.9);
-  assert.equal(calculateStreamSyncPlaybackRate(1), 0.5);
-  assert.equal(calculateStreamSyncPlaybackRate(-0.2), 1.1);
-  assert.equal(calculateStreamSyncPlaybackRate(-1), 1.5);
+  assert.strictEqual(calculateStreamSyncPlaybackRate(0), 1);
+  assert.strictEqual(calculateStreamSyncPlaybackRate(0.01), 0.995);
+  assert.strictEqual(calculateStreamSyncPlaybackRate(0.1), 0.95);
+  assert.strictEqual(calculateStreamSyncPlaybackRate(0.2), 0.9);
+  assert.strictEqual(calculateStreamSyncPlaybackRate(1), 0.5);
+  assert.strictEqual(calculateStreamSyncPlaybackRate(-0.2), 1.1);
+  assert.strictEqual(calculateStreamSyncPlaybackRate(-1), 1.5);
 });
 
 test("reports alignment independently from continued rate correction", () => {
-  assert.equal(isStreamSyncAligned(0), true);
-  assert.equal(isStreamSyncAligned(0.1), true);
-  assert.equal(isStreamSyncAligned(-0.1), true);
-  assert.equal(isStreamSyncAligned(0.101), false);
-  assert.equal(isStreamSyncAligned(Number.NaN), false);
+  assert.strictEqual(isStreamSyncAligned(0), true);
+  assert.strictEqual(isStreamSyncAligned(0.1), true);
+  assert.strictEqual(isStreamSyncAligned(-0.1), true);
+  assert.strictEqual(isStreamSyncAligned(0.101), false);
+  assert.strictEqual(isStreamSyncAligned(Number.NaN), false);
 });
 
 test("selects the slowest current playback moment", () => {

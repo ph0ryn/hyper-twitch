@@ -12,7 +12,7 @@
     "postinstall": "git config core.hooksPath .githooks && wxt prepare",
     "lint": "eslint && oxlint",
     "precommit": "pnpm run fix && eslint",
-    "test": "node --test tests/streamTime/protocol.test.mjs tests/watchHistory/model.test.mjs tests/watchHistory/protocol.test.mjs",
+    "test": "vitest run",
     "zip": "wxt zip"
   },
   "devDependencies": {
@@ -27,6 +27,7 @@
     "sort-package-json": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
+    "vitest": "catalog:",
     "wxt": "catalog:"
   },
   "packageManager": "pnpm@11.1.1"

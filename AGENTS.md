@@ -14,6 +14,7 @@ Keep the extension focused on improving the Twitch viewing experience.
 - Linting and type checking are primarily handled by Oxlint, with ESLint used
   for TypeScript naming rules and autofix support.
 - Formatting is handled by oxfmt.
+- Unit testing is handled by Vitest with WXT's testing plugin.
 - Git hooks are configured automatically during `postinstall`.
 
 ## Common Commands
@@ -55,5 +56,6 @@ extension work, use:
 ```sh
 pnpm run format
 pnpm run lint
+pnpm run test
 pnpm run build
 ```

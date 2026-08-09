@@ -13,6 +13,7 @@ catalog:
   sort-package-json: ^4.0.0
   typescript: ^6.0.3
   typescript-eslint: ^8.59.1
+  vitest: ^4.1.10
   wxt: ^0.21.3
 
 catalogMode: strict
