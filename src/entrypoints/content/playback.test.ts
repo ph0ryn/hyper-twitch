@@ -6,20 +6,20 @@ test("recognizes Twitch VOD routes", () => {
   const vod = { key: "vod:2842330566", kind: "vod", videoId: "2842330566" } as const;
 
   assert.deepEqual(findPlaybackMode("/videos/2842330566"), vod);
-  assert.deepEqual(findPlaybackMode("/bakumatsu_shishi/video/2842330566"), vod);
+  assert.deepEqual(findPlaybackMode("/example_channel/video/2842330566"), vod);
 
-  assert.deepEqual(findPlaybackMode("/bakumatsu_shishi"), {
-    key: "live:/bakumatsu_shishi",
+  assert.deepEqual(findPlaybackMode("/example_channel"), {
+    key: "live:/example_channel",
     kind: "live",
   });
 
-  assert.deepEqual(findPlaybackMode("/bakumatsu_shishi/"), {
-    key: "live:/bakumatsu_shishi",
+  assert.deepEqual(findPlaybackMode("/example_channel/"), {
+    key: "live:/example_channel",
     kind: "live",
   });
 
   assert.isUndefined(findPlaybackMode("/"));
-  assert.isUndefined(findPlaybackMode("/bakumatsu_shishi/clip/example"));
+  assert.isUndefined(findPlaybackMode("/example_channel/clip/example"));
   assert.isUndefined(findPlaybackMode("/directory/category/just-chatting"));
   assert.isUndefined(findPlaybackMode("/settings/profile"));
 });
