@@ -24,7 +24,7 @@ const SYNC_CONTROL_INTERVAL_MS = 100;
 const SYNC_PLAYBACK_RATE_EPSILON = 0.001;
 const SYNC_SEEK_BUFFER_MARGIN_SECONDS = 0.25;
 const SYNC_TARGET_MAX_AGE_MS = 2_000;
-const UPDATE_INTERVAL_MS = 500;
+const UPDATE_INTERVAL_MS = 1_000;
 const CLOCK_SELECTOR = "[data-hyper-twitch-stream-time]";
 const SHARE_SELECTOR = 'button[data-a-target="share-button"], button[aria-label="Share"]';
 const VOD_SHARE_SELECTOR =
@@ -322,6 +322,7 @@ function createTimer(placement: ClockPlacement) {
 
 function ensureClock(placement: ClockPlacement): ClockElements {
   let root = globalThis.document.querySelector<HTMLElement>(CLOCK_SELECTOR);
+  let created = false;
 
   if (root && root.dataset.hyperTwitchStreamTimeKind !== placement.kind) {
     root.remove();
@@ -329,6 +330,8 @@ function ensureClock(placement: ClockPlacement): ClockElements {
   }
 
   if (!root) {
+    created = true;
+
     if (placement.nativeWrapper) {
       root = placement.nativeWrapper.cloneNode(false) as HTMLElement;
     } else {
@@ -381,7 +384,9 @@ function ensureClock(placement: ClockPlacement): ClockElements {
     }
   }
 
-  styleClock(root, timer, placement.kind);
+  if (created) {
+    styleClock(root, timer, placement.kind);
+  }
 
   return { root, timer, visibleText };
 }
@@ -1406,20 +1411,23 @@ const streamTimeImplementation = {
           }
         }
 
-        const bufferEnd = getBufferEnd(video);
-
         if (pendingSegment && Date.now() - pendingSegment.completedAt > MAX_SEGMENT_AGE_MS) {
           pendingSegment = undefined;
         }
 
+        let bufferEnd: number | null = null;
+
         if (
           !anchor &&
           pendingSegment &&
-          bufferEnd !== null &&
           !video.paused &&
           video.readyState >= HAVE_FUTURE_DATA &&
           Date.now() - pendingSegment.completedAt >= APPEND_GRACE_MS
         ) {
+          bufferEnd = getBufferEnd(video);
+        }
+
+        if (!anchor && pendingSegment && bufferEnd !== null) {
           // Keep the initial affine mapping stable. A later network completion does not prove
           // that the current buffer end belongs to that same segment.
           anchor = {
