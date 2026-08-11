@@ -12,7 +12,9 @@ export interface VodPlaybackMode {
 export type PlaybackMode = LivePlaybackMode | VodPlaybackMode;
 export type PlaybackKind = PlaybackMode["kind"];
 
-export function findPlaybackMode(pathname = globalThis.location.pathname): PlaybackMode {
+export function findPlaybackMode(
+  pathname = globalThis.location.pathname,
+): PlaybackMode | undefined {
   const match = /^\/(?:videos\/|[a-zA-Z0-9_]+\/video\/)(\d+)(?:\/|$)/.exec(pathname);
   const vodId = match?.[1];
 
@@ -20,7 +22,13 @@ export function findPlaybackMode(pathname = globalThis.location.pathname): Playb
     return { key: `vod:${vodId}`, kind: "vod", videoId: vodId };
   }
 
-  return { key: `live:${pathname}`, kind: "live" };
+  const liveMatch = /^\/([a-zA-Z0-9_]{1,25})\/?$/.exec(pathname);
+
+  if (liveMatch) {
+    return { key: `live:/${liveMatch[1]}`, kind: "live" };
+  }
+
+  return undefined;
 }
 
 function parseTimestamp(value: unknown) {

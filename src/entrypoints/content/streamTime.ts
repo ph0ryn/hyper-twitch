@@ -1108,9 +1108,9 @@ const streamTimeImplementation = {
         const tracksTimeline =
           streamTimeDisplayReferences > 0 ||
           streamTimelineReferences > 0 ||
-          (mode.kind === "live" && syncControlsMounted);
+          (mode?.kind === "live" && syncControlsMounted);
 
-        if (!tracksTimeline || !video) {
+        if (!mode || !tracksTimeline || !video) {
           deactivate();
 
           return;

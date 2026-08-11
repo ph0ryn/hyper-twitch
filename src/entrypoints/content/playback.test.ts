@@ -12,6 +12,16 @@ test("recognizes Twitch VOD routes", () => {
     key: "live:/bakumatsu_shishi",
     kind: "live",
   });
+
+  assert.deepEqual(findPlaybackMode("/bakumatsu_shishi/"), {
+    key: "live:/bakumatsu_shishi",
+    kind: "live",
+  });
+
+  assert.isUndefined(findPlaybackMode("/"));
+  assert.isUndefined(findPlaybackMode("/bakumatsu_shishi/clip/example"));
+  assert.isUndefined(findPlaybackMode("/directory/category/just-chatting"));
+  assert.isUndefined(findPlaybackMode("/settings/profile"));
 });
 
 test("finds an archive start in structured video metadata", () => {
