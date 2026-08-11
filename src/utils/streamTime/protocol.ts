@@ -34,6 +34,7 @@ export interface StreamSyncTargetState {
 }
 
 export const streamTimeMessages = {
+  captureComplete: "streamTime:captureComplete",
   getLatestSegment: "streamTime:getLatestSegment",
   leaveSync: "streamTime:leaveSync",
   subscribe: "streamTime:subscribe",

@@ -20,6 +20,7 @@ interface SyncParticipant extends StreamSyncReport {
 }
 
 const activeSessionByTab = new Map<number, string>();
+const capturingTabs = new Set<number>();
 const closedSessions = new Set<string>();
 const completedByUrl = new Map<string, Map<number, number>>();
 const inFlightPlaylists = new Set<string>();
@@ -195,6 +196,7 @@ function clearTab(tabId: number) {
   }
 
   removeSyncParticipant(tabId);
+  capturingTabs.delete(tabId);
   activeSessionByTab.delete(tabId);
   clearCapturedState(tabId);
 }
@@ -213,6 +215,7 @@ function subscribeTab(tabId: number, sessionId: string) {
   }
 
   activeSessionByTab.set(tabId, sessionId);
+  capturingTabs.add(tabId);
   clearCapturedState(tabId);
 
   return true;
@@ -224,6 +227,7 @@ function unsubscribeTab(tabId: number, sessionId: string) {
 
   if (activeSessionByTab.get(tabId) === sessionId) {
     removeSyncParticipant(tabId, sessionId);
+    capturingTabs.delete(tabId);
     activeSessionByTab.delete(tabId);
     clearCapturedState(tabId);
   }
@@ -236,11 +240,7 @@ function isMediaSegmentUrl(value: string) {
 }
 
 function handleBeforeRequest(details: Browser.webRequest.OnBeforeRequestDetails) {
-  if (
-    details.tabId >= 0 &&
-    activeSessionByTab.has(details.tabId) &&
-    details.url.includes(".m3u8")
-  ) {
+  if (details.tabId >= 0 && capturingTabs.has(details.tabId) && details.url.includes(".m3u8")) {
     void fetchPlaylist(details.url);
   }
 
@@ -248,11 +248,7 @@ function handleBeforeRequest(details: Browser.webRequest.OnBeforeRequestDetails)
 }
 
 function handleCompleted(details: Browser.webRequest.OnCompletedDetails) {
-  if (
-    details.tabId >= 0 &&
-    activeSessionByTab.has(details.tabId) &&
-    isMediaSegmentUrl(details.url)
-  ) {
+  if (details.tabId >= 0 && capturingTabs.has(details.tabId) && isMediaSegmentUrl(details.url)) {
     rememberCompleted(details.url, details.tabId, details.timeStamp);
   }
 }
@@ -296,6 +292,17 @@ function handleMessage(message: unknown, sender: Browser.runtime.MessageSender) 
     return Promise.resolve(true);
   }
 
+  if (type === streamTimeMessages.captureComplete) {
+    if (activeSessionByTab.get(tabId) !== sessionId) {
+      return Promise.resolve(false);
+    }
+
+    capturingTabs.delete(tabId);
+    clearCapturedState(tabId);
+
+    return Promise.resolve(true);
+  }
+
   if (type === streamTimeMessages.updateSync && isStreamSyncReport(report)) {
     return Promise.resolve(updateSync(tabId, sessionId, report));
   }
@@ -304,6 +311,8 @@ function handleMessage(message: unknown, sender: Browser.runtime.MessageSender) 
     if (!hasActiveSession(tabId, sessionId)) {
       return Promise.resolve(null);
     }
+
+    capturingTabs.add(tabId);
 
     return Promise.resolve(latestByTab.get(tabId) ?? null);
   }

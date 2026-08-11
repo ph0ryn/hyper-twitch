@@ -391,6 +391,16 @@ function removeClocks() {
 }
 
 function renderClock(clock: ClockElements, timestamp?: number) {
+  let renderKey = "syncing";
+
+  if (timestamp !== undefined) {
+    renderKey = String(Math.floor(timestamp / 1_000));
+  }
+
+  if (clock.root.dataset.renderKey === renderKey) {
+    return;
+  }
+
   let accessibleText = "syncing";
   let visibleText = "syncing…";
 
@@ -399,9 +409,12 @@ function renderClock(clock: ClockElements, timestamp?: number) {
     visibleText = visibleFormatter.format(timestamp);
   }
 
+  const nextAccessibleText = `Approximate stream time: ${accessibleText}`;
+
+  clock.root.dataset.renderKey = renderKey;
   clock.visibleText.textContent = `≈ ${visibleText}`;
-  clock.timer.setAttribute("aria-label", `Approximate stream time: ${accessibleText}`);
-  clock.root.title = `Approximate stream time: ${accessibleText}`;
+  clock.timer.setAttribute("aria-label", nextAccessibleText);
+  clock.root.title = nextAccessibleText;
 }
 
 function findVideo() {
@@ -723,9 +736,18 @@ const streamTimeImplementation = {
         return;
       }
 
+      const pressed = String(syncRequested);
+
+      if (
+        syncButton.dataset.state === state &&
+        syncButton.getAttribute("aria-pressed") === pressed
+      ) {
+        return;
+      }
+
       syncButton.textContent = "Sync";
       syncButton.dataset.state = state;
-      syncButton.setAttribute("aria-pressed", String(syncRequested));
+      syncButton.setAttribute("aria-pressed", pressed);
       syncButton.setAttribute("aria-busy", String(state === "buffering" || state === "waiting"));
 
       const titles = {
@@ -1286,11 +1308,12 @@ const streamTimeImplementation = {
           currentMode === undefined ||
           currentMode.key !== mode.key ||
           currentMode.kind !== mode.kind;
+        const videoChanged = video !== currentVideo;
 
-        if (modeChanged || video !== currentVideo) {
+        if (modeChanged || videoChanged) {
           resetSyncState();
 
-          if (currentMode?.kind === "live" && mode.kind !== "live") {
+          if (currentMode?.kind === "live") {
             unsubscribe();
           }
 
@@ -1327,7 +1350,9 @@ const streamTimeImplementation = {
           removeClocks();
         }
 
-        notifyTimelineSubscribers();
+        if (mode.kind === "vod" || modeChanged || videoChanged) {
+          notifyTimelineSubscribers();
+        }
 
         if (clock && modeChanged) {
           renderClock(clock);
@@ -1362,22 +1387,23 @@ const streamTimeImplementation = {
           }
         }
 
-        const response = await sendMessage({
-          sessionId,
-          type: streamTimeMessages.getLatestSegment,
-        });
+        if (!anchor) {
+          const response = await sendMessage({
+            sessionId,
+            type: streamTimeMessages.getLatestSegment,
+          });
 
-        if (isInactive() || currentVideo !== video || currentMode?.key !== mode.key) {
-          return;
-        }
+          if (isInactive() || currentVideo !== video || currentMode?.key !== mode.key) {
+            return;
+          }
 
-        if (
-          !anchor &&
-          isStreamTimeSegment(response) &&
-          Date.now() - response.completedAt <= MAX_SEGMENT_AGE_MS &&
-          response.url !== pendingSegment?.url
-        ) {
-          pendingSegment = response;
+          if (
+            isStreamTimeSegment(response) &&
+            Date.now() - response.completedAt <= MAX_SEGMENT_AGE_MS &&
+            response.url !== pendingSegment?.url
+          ) {
+            pendingSegment = response;
+          }
         }
 
         const bufferEnd = getBufferEnd(video);
@@ -1403,6 +1429,7 @@ const streamTimeImplementation = {
           };
 
           pendingSegment = undefined;
+          void sendMessage({ sessionId, type: streamTimeMessages.captureComplete });
           notifyTimelineSubscribers();
         }
 
