@@ -428,15 +428,15 @@ function findVideo() {
   );
 }
 
-function findPlaybackMode(): PlaybackMode {
-  const match = /^\/videos\/(\d+)(?:\/|$)/.exec(globalThis.location.pathname);
+export function findPlaybackMode(pathname = globalThis.location.pathname): PlaybackMode {
+  const match = /^\/(?:videos\/|[a-zA-Z0-9_]+\/video\/)(\d+)(?:\/|$)/.exec(pathname);
   const vodId = match?.[1];
 
   if (vodId) {
     return { key: `vod:${vodId}`, kind: "vod", videoId: vodId };
   }
 
-  return { key: `live:${globalThis.location.pathname}`, kind: "live" };
+  return { key: `live:${pathname}`, kind: "live" };
 }
 
 function getBufferEnd(video: HTMLVideoElement) {
