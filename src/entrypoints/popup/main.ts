@@ -38,6 +38,7 @@ function createFeatureRow(featureId: FeatureId): {
   checkbox.className = "feature-control";
   checkbox.id = `feature-${String(featureId)}`;
   checkbox.disabled = true;
+  checkbox.setAttribute("role", "switch");
 
   const setting = getFeatureEnabledSetting(featureId);
 
@@ -53,29 +54,41 @@ function createFeatureRowElement(
   definition: FeatureDefinition,
   checkbox: HTMLInputElement,
 ): HTMLElement {
-  const row = popupDocument.createElement("article");
+  const row = popupDocument.createElement("label");
 
   row.className = "feature-row";
+  row.htmlFor = checkbox.id;
 
-  const content = popupDocument.createElement("div");
+  const content = popupDocument.createElement("span");
 
   content.className = "feature-content";
 
-  const label = popupDocument.createElement("label");
+  const label = popupDocument.createElement("span");
 
   label.className = "feature-label";
-  label.htmlFor = checkbox.id;
+  label.id = `feature-${String(featureId)}-label`;
   label.textContent = definition.label;
 
-  const description = popupDocument.createElement("p");
+  const description = popupDocument.createElement("span");
 
   description.className = "feature-description";
   description.id = `feature-${String(featureId)}-description`;
   description.textContent = definition.description;
 
+  const visualSwitch = popupDocument.createElement("span");
+
+  visualSwitch.className = "feature-switch";
+  visualSwitch.setAttribute("aria-hidden", "true");
+
+  const switchKnob = popupDocument.createElement("span");
+
+  switchKnob.className = "feature-switch-knob";
+  visualSwitch.append(switchKnob);
+
   checkbox.setAttribute("aria-describedby", description.id);
+  checkbox.setAttribute("aria-labelledby", label.id);
   content.append(label, description);
-  row.append(checkbox, content);
+  row.append(content, checkbox, visualSwitch);
 
   return row;
 }
@@ -106,7 +119,7 @@ async function saveFeatureValue(checkbox: HTMLInputElement, setting: FeatureSett
 }
 
 function clearStatus() {
-  statusElement.textContent = "";
+  statusElement.textContent = "Changes apply instantly in this browser.";
   statusElement.dataset.state = "";
 }
 

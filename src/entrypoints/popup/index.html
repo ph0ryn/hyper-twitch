@@ -9,19 +9,25 @@
   <body>
     <main class="popup-shell" id="app">
       <header class="popup-header">
-        <h1>Hyper Twitch</h1>
+        <div aria-hidden="true" class="brand-mark">H</div>
+        <div>
+          <h1>Hyper Twitch</h1>
+          <p class="tagline">A better player, on your terms.</p>
+        </div>
       </header>
 
-      <section aria-labelledby="features-heading" id="features">
-        <h2 class="visually-hidden" id="features-heading">Features</h2>
-        <div aria-live="polite" class="feature-list" id="feature-list"></div>
+      <section aria-label="Feature settings" class="features" id="features">
+        <div class="feature-list" id="feature-list"></div>
         <div class="empty-state" id="empty-state">
-          <h2>No features yet</h2>
-          <p>Feature controls will appear here when features are added.</p>
+          <h3>No enhancements available</h3>
+          <p>New controls will appear here when they are ready.</p>
         </div>
       </section>
 
-      <p aria-live="polite" class="status" id="status" role="status"></p>
+      <footer class="popup-footer">
+        <span aria-hidden="true" class="status-dot"></span>
+        <p class="status" id="status" role="status">Changes apply instantly in this browser.</p>
+      </footer>
     </main>
     <script src="./main.ts" type="module"></script>
   </body>

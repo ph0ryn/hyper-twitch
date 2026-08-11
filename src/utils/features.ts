@@ -9,18 +9,18 @@ export type FeatureDefinition = Readonly<{
 export const featureDefinitions = {
   streamSync: {
     defaultEnabled: true,
-    description: "Keep multiple live streams at the same moment.",
-    label: "Enable stream sync",
+    description: "Line up live streams you select on Twitch at the same moment.",
+    label: "Keep live streams in sync",
   },
   streamTime: {
     defaultEnabled: true,
-    description: "Show the time of day in the stream.",
+    description: "See the approximate clock time beside Twitch’s player controls.",
     label: "Show stream time",
   },
   watchHistory: {
     defaultEnabled: true,
-    description: "Show watched parts on archive seek bars.",
-    label: "Track watched sections",
+    description: "Track watched parts in live streams and past broadcasts.",
+    label: "Remember watched sections",
   },
 } as const satisfies Record<string, FeatureDefinition>;
 
