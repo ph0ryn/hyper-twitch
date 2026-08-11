@@ -15,6 +15,13 @@ import {
   type StreamSyncReport,
   type StreamSyncResponse,
 } from "../../utils/streamTime/protocol";
+import {
+  fetchArchiveStart,
+  findPlaybackMode,
+  type PlaybackKind,
+  type PlaybackMode,
+  type VodPlaybackMode,
+} from "./playback";
 
 const APPEND_GRACE_MS = 500;
 const HAVE_FUTURE_DATA = 3;
@@ -106,20 +113,6 @@ const visibleFormatter = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
   second: "2-digit",
 });
-
-interface LivePlaybackMode {
-  kind: "live";
-  key: string;
-}
-
-interface VodPlaybackMode {
-  kind: "vod";
-  key: string;
-  videoId: string;
-}
-
-type PlaybackMode = LivePlaybackMode | VodPlaybackMode;
-type PlaybackKind = PlaybackMode["kind"];
 
 export type StreamTimelineSnapshot =
   | {
@@ -428,17 +421,6 @@ function findVideo() {
   );
 }
 
-export function findPlaybackMode(pathname = globalThis.location.pathname): PlaybackMode {
-  const match = /^\/(?:videos\/|[a-zA-Z0-9_]+\/video\/)(\d+)(?:\/|$)/.exec(pathname);
-  const vodId = match?.[1];
-
-  if (vodId) {
-    return { key: `vod:${vodId}`, kind: "vod", videoId: vodId };
-  }
-
-  return { key: `live:${pathname}`, kind: "live" };
-}
-
 function getBufferEnd(video: HTMLVideoElement) {
   if (video.buffered.length === 0) {
     return null;
@@ -464,181 +446,6 @@ function isStreamTimeSegment(value: unknown): value is StreamTimeSegment {
     Number.isFinite(segment.durationMs) &&
     Number.isFinite(segment.completedAt)
   );
-}
-
-function parseTimestamp(value: unknown) {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const timestamp = Date.parse(value);
-
-  if (Number.isFinite(timestamp)) {
-    return timestamp;
-  }
-
-  return undefined;
-}
-
-function isVideoObjectForId(object: Record<string, unknown>, videoId: string) {
-  return [object.embedUrl, object.url].some((value) => {
-    if (typeof value !== "string") {
-      return false;
-    }
-
-    try {
-      const url = new URL(value, globalThis.location.origin);
-      const pathname = url.pathname.replace(/\/+$/, "");
-
-      return url.origin === globalThis.location.origin && pathname === `/videos/${videoId}`;
-    } catch {
-      return false;
-    }
-  });
-}
-
-function findVideoObjectStart(value: unknown, videoId?: string): number | undefined {
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const timestamp = findVideoObjectStart(item, videoId);
-
-      if (timestamp !== undefined) {
-        return timestamp;
-      }
-    }
-
-    return undefined;
-  }
-
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-
-  const object = value as Record<string, unknown>;
-  const type = object["@type"];
-  const isVideoObject =
-    type === "VideoObject" || (Array.isArray(type) && type.includes("VideoObject"));
-
-  if (isVideoObject && (videoId === undefined || isVideoObjectForId(object, videoId))) {
-    const timestamp = parseTimestamp(object.uploadDate);
-
-    if (timestamp !== undefined) {
-      return timestamp;
-    }
-  }
-
-  return findVideoObjectStart(object["@graph"], videoId);
-}
-
-function parseArchiveStart(document: Document) {
-  const contentType = document
-    .querySelector('meta[name="amazonbot-content-type"]')
-    ?.getAttribute("content")
-    ?.trim()
-    .toLowerCase();
-
-  if (contentType !== "vod") {
-    return null;
-  }
-
-  const metaTimestamp = parseTimestamp(
-    document.querySelector('meta[property="og:video:release_date"]')?.getAttribute("content"),
-  );
-
-  if (metaTimestamp !== undefined) {
-    return metaTimestamp;
-  }
-
-  for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
-    try {
-      const timestamp = findVideoObjectStart(JSON.parse(script.textContent));
-
-      if (timestamp !== undefined) {
-        return timestamp;
-      }
-    } catch {
-      // Twitch can include non-JSON script content with this MIME type.
-    }
-  }
-
-  return null;
-}
-
-function parseCurrentArchiveStart(videoId: string) {
-  const canonicalHref = globalThis.document
-    .querySelector('link[rel="canonical"]')
-    ?.getAttribute("href");
-
-  if (!canonicalHref) {
-    return null;
-  }
-
-  try {
-    const canonicalUrl = new URL(canonicalHref, globalThis.location.origin);
-
-    const pathname = canonicalUrl.pathname.replace(/\/+$/, "");
-
-    if (canonicalUrl.origin !== globalThis.location.origin || pathname !== `/videos/${videoId}`) {
-      return null;
-    }
-  } catch {
-    return null;
-  }
-
-  const contentType = globalThis.document
-    .querySelector('meta[name="amazonbot-content-type"]')
-    ?.getAttribute("content")
-    ?.trim()
-    .toLowerCase();
-
-  if (contentType !== "vod") {
-    return null;
-  }
-
-  for (const script of globalThis.document.querySelectorAll('script[type="application/ld+json"]')) {
-    try {
-      const timestamp = findVideoObjectStart(JSON.parse(script.textContent), videoId);
-
-      if (timestamp !== undefined) {
-        return timestamp;
-      }
-    } catch {
-      // Twitch can include non-JSON script content with this MIME type.
-    }
-  }
-
-  return null;
-}
-
-async function fetchArchiveStart(videoId: string, signal: AbortSignal) {
-  const currentStartMs = parseCurrentArchiveStart(videoId);
-
-  if (currentStartMs !== null) {
-    return currentStartMs;
-  }
-
-  try {
-    const url = new URL(`/videos/${videoId}`, globalThis.location.origin);
-    const response = await globalThis.fetch(url, {
-      cache: "no-store",
-      credentials: "omit",
-      signal,
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const html = await response.text();
-
-    if (signal.aborted) {
-      return null;
-    }
-
-    return parseArchiveStart(new globalThis.DOMParser().parseFromString(html, "text/html"));
-  } catch {
-    return null;
-  }
 }
 
 async function sendMessage(message: StreamTimeRequest) {

@@ -1,6 +1,6 @@
 import { assert, test } from "vitest";
 
-import { findPlaybackMode } from "./streamTime";
+import { findPlaybackMode, findVideoObjectStart } from "./playback";
 
 test("recognizes Twitch VOD routes", () => {
   const vod = { key: "vod:2842330566", kind: "vod", videoId: "2842330566" } as const;
@@ -12,4 +12,17 @@ test("recognizes Twitch VOD routes", () => {
     key: "live:/bakumatsu_shishi",
     kind: "live",
   });
+});
+
+test("finds an archive start in structured video metadata", () => {
+  const uploadDate = "2026-08-11T12:34:56Z";
+
+  assert.equal(
+    findVideoObjectStart({
+      "@graph": [{ "@type": ["Thing", "VideoObject"], uploadDate }],
+    }),
+    Date.parse(uploadDate),
+  );
+
+  assert.isUndefined(findVideoObjectStart({ "@type": "VideoObject", uploadDate: "invalid" }));
 });
