@@ -92,6 +92,7 @@ export const watchHistoryRuntime = {
     let detachVideo = () => {};
     let directVodRecord: VodWatchRecord | undefined = undefined;
     let drainingWrites = false;
+    let finalRetryAvailable = true;
     let hasAttachedVideo = false;
     let lastFlushAt = 0;
     const liveRecordByIdentity = new Map<string, LiveWatchRecord>();
@@ -302,11 +303,15 @@ export const watchHistoryRuntime = {
       } finally {
         drainingWrites = false;
 
-        if (pendingWrites.size > 0 && !cleaned) {
+        if (pendingWrites.size > 0 && (!cleaned || finalRetryAvailable)) {
           let delayMs = 0;
 
           if (failed) {
             delayMs = FLUSH_RETRY_MS;
+          }
+
+          if (cleaned) {
+            finalRetryAvailable = false;
           }
 
           scheduleWriteDrain(delayMs);
