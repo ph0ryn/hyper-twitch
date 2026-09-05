@@ -101,7 +101,7 @@ function createFeatureRowElement(
     overlayFeedback: "M4 5h16v12H9l-5 3z M8 9h8m-8 4h5",
     streamSync: "M4 8h14l-3-3m3 3-3 3M20 16H6l3-3m-3 3 3 3",
     streamTime: "M12 8v5l3 2 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0",
-    watchHistory: "M4 12a8 8 0 1 1 2 5 M4 5v7h7 M9 13l2 2 5-5",
+    watchHistory: "M3 12a9 9 0 1 0 9-9c-2.7 0-5.1 1.2-6.7 3L3 8 M3 3v5h5 M12 7v5l4 2",
   };
   const icon = popupDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
   const path = popupDocument.createElementNS("http://www.w3.org/2000/svg", "path");
