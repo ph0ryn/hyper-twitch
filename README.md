@@ -84,6 +84,10 @@ from the same-origin HTML plus the player's current position. The visible
 value includes `≈` and may temporarily show `syncing…` while metadata or a
 player timeline is not ready.
 
+If the archive metadata request fails, it is retried automatically after a
+five-second delay while the archive timeline is active. A successful response
+without archive start metadata does not trigger retries.
+
 Stream time is enabled by default when no setting has been saved. A popup
 choice always takes precedence. Twitch highlights and uploaded videos are not
 treated as stream archives.
@@ -116,7 +120,15 @@ when Stream time is off.
 Watch history records the parts that actually play in live streams and past
 broadcasts. It is enabled by default. Seeking over a section does not mark it as
 watched, and turning the feature off stops recording without deleting existing
-history.
+history. After turning it back on, replaying a section records it even if that
+section was previously watched while the feature was off. Sections watched only
+while the feature was off remain unrecorded.
+
+When archive confirmation is still pending, watched sections are held in memory.
+If you navigate within Twitch or turn history off before the pending metadata
+response arrives, those sections can still be saved when the response confirms
+the archive. This does not capture additional playback after history is turned
+off, and pending confirmation does not survive closing or reloading the page.
 
 On a past broadcast, watched sections replace those portions of Twitch's seek
 bar with bright cyan. Direct archive history is combined with matching live
