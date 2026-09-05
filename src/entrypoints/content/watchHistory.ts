@@ -102,7 +102,7 @@ export const watchHistoryRuntime = {
     let playedBaseline: WatchRange[] = [];
     let provisionalId = globalThis.crypto.randomUUID();
     let recordUnwatchers: (() => void)[] = [];
-    let retryTimer: number | undefined = undefined;
+    let retryTimer: ReturnType<typeof globalThis.setTimeout> | undefined = undefined;
     let vodMetadata: VodWatchMetadata | undefined = undefined;
 
     const clearRecordWatchers = () => {

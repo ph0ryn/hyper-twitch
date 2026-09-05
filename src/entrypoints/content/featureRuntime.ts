@@ -1,4 +1,6 @@
 import { featureDefinitions, getFeatureEnabledSetting, type FeatureId } from "../../utils/features";
+import { keyboardShortcutsRuntime } from "./keyboardShortcuts";
+import { overlayFeedbackRuntime } from "./overlayFeedback";
 import { streamSyncRuntime, streamTimeRuntime } from "./streamTime";
 import { watchHistoryRuntime } from "./watchHistory";
 
@@ -11,6 +13,8 @@ export interface FeatureRuntime {
 export type FeatureRuntimeRegistry = Record<FeatureId, FeatureRuntime>;
 
 export const featureRuntimes: FeatureRuntimeRegistry = {
+  keyboardShortcuts: keyboardShortcutsRuntime,
+  overlayFeedback: overlayFeedbackRuntime,
   streamSync: streamSyncRuntime,
   streamTime: streamTimeRuntime,
   watchHistory: watchHistoryRuntime,

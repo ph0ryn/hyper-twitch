@@ -54,6 +54,27 @@ The popup renders registered metadata automatically. Keep Twitch-side feature
 code out of the popup bundle; feature toggles use local storage directly rather
 than a general background message bus.
 
+## Playback shortcuts and feedback
+
+Both features are enabled by default and have separate popup switches.
+On Twitch videos, Left/Right skip by 10 seconds, J/L by 30 seconds, and K
+immediately toggles playback. Typing, modified shortcuts, and controls such as
+menus and sliders keep their normal keyboard behavior. Live streams and clips
+are not included.
+
+Repeated skip presses add up, including presses in the opposite direction.
+The player seeks once, 300 ms after all skip keys are released. Holding a key
+keeps the batch open. Playback continues while the batch is pending; the final
+offset is applied to the current playback position and clamped to the video's
+start and end. Losing window focus, navigating away, or seeking elsewhere
+cancels the pending skip.
+
+Playback feedback shows the combined offset immediately over the player and
+keeps the final amount visible briefly after seeking. It also shows play/pause
+feedback for K. Disabling feedback hides these overlays without changing the
+shortcuts. Disabling shortcuts restores Twitch's native keys; feedback does not
+replace native controls or observe native shortcuts.
+
 ## Stream time
 
 Stream time shows the approximate wall-clock timestamp of the current live

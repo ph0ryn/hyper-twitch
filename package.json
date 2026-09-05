@@ -20,6 +20,7 @@
     "@typescript/native-preview": "catalog:",
     "eslint": "catalog:",
     "eslint-plugin-oxlint": "catalog:",
+    "happy-dom": "catalog:",
     "lint-staged": "catalog:",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",

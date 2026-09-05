@@ -7,6 +7,17 @@ export type FeatureDefinition = Readonly<{
 }>;
 
 export const featureDefinitions = {
+  keyboardShortcuts: {
+    defaultEnabled: true,
+    description:
+      "Use arrows for 10-second skips, J/L for 30 seconds, and K to pause or play videos.",
+    label: "Use playback shortcuts",
+  },
+  overlayFeedback: {
+    defaultEnabled: true,
+    description: "Show combined skip amounts and play/pause feedback for playback shortcuts.",
+    label: "Show playback feedback",
+  },
   streamSync: {
     defaultEnabled: true,
     description: "Line up live streams you select on Twitch at the same moment.",
