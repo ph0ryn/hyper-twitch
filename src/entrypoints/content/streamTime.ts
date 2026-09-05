@@ -30,6 +30,7 @@ import {
 } from "./streamTimeClock";
 
 const APPEND_GRACE_MS = 500;
+const ARCHIVE_RETRY_MS = 5_000;
 const HAVE_FUTURE_DATA = 3;
 const HAVE_METADATA = 1;
 const MAX_SEGMENT_AGE_MS = 15_000;
@@ -226,6 +227,7 @@ const streamTimeImplementation = {
     let subscribed = false;
     let updating = false;
     let currentMode: PlaybackMode | undefined = undefined;
+    let vodRetryAt = 0;
     let vodStartKey: string | undefined = undefined;
     let vodStartMs: number | null | undefined = undefined;
     let vodRequest: Promise<number | null> | undefined = undefined;
@@ -297,6 +299,7 @@ const streamTimeImplementation = {
         return;
       }
 
+      vodRetryAt = 0;
       vodStartKey = key;
       vodStartMs = undefined;
       vodRequest = undefined;
@@ -810,25 +813,41 @@ const streamTimeImplementation = {
     ) => {
       resetVodStart(mode.key);
 
-      if (vodStartMs === undefined && !vodRequest) {
+      if (vodStartMs === undefined && !vodRequest && Date.now() >= vodRetryAt) {
         const request = fetchArchiveStart(mode.videoId, signal);
 
         vodRequest = request;
 
-        void request.then((startMs) => {
-          if (vodRequest !== request) {
-            return;
-          }
+        void request.then(
+          (startMs) => {
+            if (vodRequest !== request) {
+              return;
+            }
 
-          vodRequest = undefined;
+            vodRequest = undefined;
 
-          if (isInactive() || currentVideo !== video || currentMode?.key !== mode.key) {
-            return;
-          }
+            if (isInactive() || currentVideo !== video || currentMode?.key !== mode.key) {
+              return;
+            }
 
-          vodStartMs = startMs;
-          notifyTimelineSubscribers();
-        });
+            vodStartMs = startMs;
+            notifyTimelineSubscribers();
+          },
+          (error: unknown) => {
+            if (vodRequest !== request) {
+              return;
+            }
+
+            vodRequest = undefined;
+
+            if (isInactive() || currentMode?.key !== mode.key) {
+              return;
+            }
+
+            vodRetryAt = Date.now() + ARCHIVE_RETRY_MS;
+            console.warn("[Hyper Twitch] Unable to load archive metadata; retrying", error);
+          },
+        );
       }
 
       if (

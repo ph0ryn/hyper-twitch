@@ -176,7 +176,7 @@ export async function fetchArchiveStart(videoId: string, signal: AbortSignal) {
     });
 
     if (!response.ok) {
-      return null;
+      throw new Error(`Unable to fetch archive metadata: HTTP ${response.status}`);
     }
 
     const html = await response.text();
@@ -186,7 +186,11 @@ export async function fetchArchiveStart(videoId: string, signal: AbortSignal) {
     }
 
     return parseArchiveStart(new globalThis.DOMParser().parseFromString(html, "text/html"));
-  } catch {
-    return null;
+  } catch (error) {
+    if (signal.aborted) {
+      return null;
+    }
+
+    throw error;
   }
 }
