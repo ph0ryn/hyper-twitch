@@ -1,7 +1,11 @@
 // @vitest-environment happy-dom
 import { afterEach, assert, test, vi } from "vitest";
 
-import { subscribeStreamTimeline, type StreamTimelineSnapshot } from "./streamTime";
+import {
+  streamSyncRuntime,
+  subscribeStreamTimeline,
+  type StreamTimelineSnapshot,
+} from "./streamTime";
 
 import type { ContentScriptContext } from "#imports";
 
@@ -71,4 +75,65 @@ test("stops retrying archive metadata after cleanup", async () => {
   cleanup();
   await vi.advanceTimersByTimeAsync(60000);
   assert.strictEqual(fetchMock.mock.calls.length, 1);
+});
+
+test("preserves sync controls across row replacement and removes them on abort", async () => {
+  vi.useFakeTimers();
+  globalThis.window.history.replaceState(null, "", "/channel");
+  const metricsMarkup =
+    '<div><span class="live-time"></span></div><div data-viewers><span data-a-target="animated-channel-viewers-count"></span></div><button data-a-target="share-button"></button>';
+
+  globalThis.document.body.innerHTML = `<div data-a-target="video-player"><video></video></div><div data-metrics>${metricsMarkup}</div>`;
+
+  vi.spyOn(globalThis.HTMLElement.prototype, "getClientRects").mockReturnValue([
+    new globalThis.DOMRect(0, 0, 100, 20),
+  ] as unknown as DOMRectList);
+
+  const ctx = {
+    setInterval: (callback: () => void, delay: number) => globalThis.setInterval(callback, delay),
+  } as unknown as ContentScriptContext;
+  const controller = new AbortController();
+
+  cleanup = streamSyncRuntime.mount(ctx, controller.signal);
+  await vi.advanceTimersByTimeAsync(1000);
+  const button = globalThis.document.querySelector<HTMLButtonElement>(
+    "[data-hyper-twitch-stream-sync]",
+  );
+
+  assert.ok(button);
+  assert.strictEqual(button.nextElementSibling?.hasAttribute("data-viewers"), true);
+  assert.strictEqual(button.textContent, "Sync");
+  assert.strictEqual(button.getAttribute("aria-pressed"), "false");
+  button.click();
+  assert.strictEqual(button.dataset.state, "waiting");
+  assert.strictEqual(button.getAttribute("aria-pressed"), "true");
+  assert.strictEqual(button.getAttribute("aria-busy"), "true");
+  assert.strictEqual(button.getAttribute("aria-label"), "Stop syncing this live stream");
+
+  const metrics = globalThis.document.querySelector<HTMLElement>("[data-metrics]")!;
+
+  metrics.innerHTML = metricsMarkup;
+  await vi.advanceTimersByTimeAsync(1000);
+  assert.strictEqual(metrics.querySelector("[data-hyper-twitch-stream-sync]"), button);
+  assert.strictEqual(button.nextElementSibling?.hasAttribute("data-viewers"), true);
+  assert.strictEqual(button.getAttribute("aria-pressed"), "true");
+
+  assert.strictEqual(
+    globalThis.document.querySelectorAll("[data-hyper-twitch-stream-sync-style]").length,
+    1,
+  );
+
+  button.click();
+  assert.strictEqual(button.dataset.state, "sync");
+  assert.strictEqual(button.getAttribute("aria-pressed"), "false");
+  assert.strictEqual(button.getAttribute("aria-busy"), "false");
+
+  assert.strictEqual(
+    button.getAttribute("aria-label"),
+    "Sync this live stream with other live streams",
+  );
+
+  controller.abort();
+  assert.isNull(globalThis.document.querySelector("[data-hyper-twitch-stream-sync]"));
+  assert.isNull(globalThis.document.querySelector("[data-hyper-twitch-stream-sync-style]"));
 });

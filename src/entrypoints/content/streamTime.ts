@@ -22,6 +22,13 @@ import {
   type VodPlaybackMode,
 } from "./playback";
 import {
+  createSyncButton,
+  ensureSyncStyle,
+  findViewerCountWrapper,
+  renderSyncButton,
+  type SyncButtonState,
+} from "./streamSyncButton";
+import {
   ensureClock,
   findClockPlacement,
   removeClocks,
@@ -39,59 +46,6 @@ const SYNC_PLAYBACK_RATE_EPSILON = 0.001;
 const SYNC_SEEK_BUFFER_MARGIN_SECONDS = 0.25;
 const SYNC_TARGET_MAX_AGE_MS = 2_000;
 const UPDATE_INTERVAL_MS = 1_000;
-const VIEWER_COUNT_SELECTOR = '[data-a-target="animated-channel-viewers-count"]';
-const SYNC_STYLE_TEXT = `
-[data-hyper-twitch-stream-sync] {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  gap: 6px;
-  min-block-size: 32px;
-  padding: 5px 10px;
-  margin-inline-end: 8px;
-  border: 1px solid var(--color-border-base, #3b3b44);
-  border-radius: 8px;
-  background: var(--color-background-base, #18181b);
-  color: var(--color-text-base, #efeff1);
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 20px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background-color 120ms ease-out;
-}
-[data-hyper-twitch-stream-sync]::before {
-  content: "↔";
-  font-size: 16px;
-}
-[data-hyper-twitch-stream-sync]:hover {
-  background: var(--color-background-button-secondary-hover, #34343b);
-}
-[data-hyper-twitch-stream-sync]:focus-visible {
-  outline: 2px solid #65b98c;
-  outline-offset: 2px;
-}
-[data-hyper-twitch-stream-sync][aria-pressed="true"] {
-  background: #98e1b9;
-  border-color: #98e1b9;
-  color: #152c20;
-}
-[data-hyper-twitch-stream-sync][aria-pressed="true"]:hover {
-  background: #b8efcf;
-}
-[data-hyper-twitch-stream-sync][aria-busy="true"] {
-  border-style: dashed;
-  border-color: #176b53;
-}
-[data-hyper-twitch-stream-sync]:active { transform: scale(.96); }
-@media (prefers-reduced-motion: reduce) {
-  [data-hyper-twitch-stream-sync] { transition: none; }
-  [data-hyper-twitch-stream-sync]:active { transform: none; }
-}
-`;
 
 export type StreamTimelineSnapshot =
   | {
@@ -130,28 +84,6 @@ let activeStreamTimeController: StreamTimeController | undefined = undefined;
 let sharedStreamTimeRuntime: SharedStreamTimeRuntime | undefined = undefined;
 let streamTimeDisplayReferences = 0;
 let streamTimelineReferences = 0;
-
-function findViewerCountWrapper(metrics: HTMLElement) {
-  const viewerCount = [...metrics.querySelectorAll<HTMLElement>(VIEWER_COUNT_SELECTOR)].find(
-    (element) => element.getClientRects().length > 0,
-  );
-
-  if (!viewerCount) {
-    return null;
-  }
-
-  let wrapper = viewerCount;
-
-  while (wrapper.parentElement && wrapper.parentElement !== metrics) {
-    wrapper = wrapper.parentElement;
-  }
-
-  if (wrapper.parentElement === metrics) {
-    return wrapper;
-  }
-
-  return null;
-}
 
 function isBufferedMediaTime(video: HTMLVideoElement, mediaTime: number) {
   try {
@@ -300,53 +232,10 @@ const streamTimeImplementation = {
       vodRequest = undefined;
     };
 
-    const setSyncButtonState = (state: "buffering" | "sync" | "synced" | "waiting") => {
-      if (!syncButton) {
-        return;
+    const setSyncButtonState = (state: SyncButtonState) => {
+      if (syncButton) {
+        renderSyncButton(syncButton, state, syncRequested);
       }
-
-      const pressed = String(syncRequested);
-
-      if (
-        syncButton.dataset.state === state &&
-        syncButton.getAttribute("aria-pressed") === pressed
-      ) {
-        return;
-      }
-
-      syncButton.textContent = "Sync";
-      syncButton.dataset.state = state;
-      syncButton.setAttribute("aria-pressed", pressed);
-      syncButton.setAttribute("aria-busy", String(state === "buffering" || state === "waiting"));
-
-      const titles = {
-        buffering: "Adjusting playback speed. Select to stop syncing.",
-        sync: "Sync this live stream with other live streams",
-        synced: "Synced with other live streams. Select to stop syncing.",
-        waiting: "Waiting for another live stream. Select to stop syncing.",
-      } as const;
-
-      syncButton.title = titles[state];
-
-      if (syncRequested) {
-        syncButton.setAttribute("aria-label", "Stop syncing this live stream");
-      } else {
-        syncButton.setAttribute("aria-label", "Sync this live stream with other live streams");
-      }
-    };
-
-    const ensureSyncStyle = () => {
-      if (syncStyle?.isConnected) {
-        return;
-      }
-
-      const parent = globalThis.document.head;
-
-      syncStyle?.remove();
-      syncStyle = globalThis.document.createElement("style");
-      syncStyle.dataset.hyperTwitchStreamSyncStyle = "";
-      syncStyle.textContent = SYNC_STYLE_TEXT;
-      parent.append(syncStyle);
     };
 
     const removeSyncButton = () => {
@@ -460,14 +349,7 @@ const streamTimeImplementation = {
       if (!syncButton) {
         syncRequestVersion += 1;
 
-        const button = globalThis.document.createElement("button");
-
-        button.type = "button";
-        button.dataset.hyperTwitchStreamSync = "";
-        button.setAttribute("aria-label", "Sync live streams to the same moment");
-        button.addEventListener("click", onSyncButtonClick);
-
-        syncButton = button;
+        syncButton = createSyncButton(onSyncButtonClick);
 
         if (syncRequested) {
           setSyncButtonState("waiting");
@@ -476,7 +358,7 @@ const streamTimeImplementation = {
         }
       }
 
-      ensureSyncStyle();
+      syncStyle = ensureSyncStyle(syncStyle);
 
       if (
         syncButton.parentElement !== metrics ||
