@@ -98,7 +98,9 @@ export const watchHistoryRuntime = {
     const liveRecordByIdentity = new Map<string, LiveWatchRecord>();
     let metadataRequestVersion = 0;
     const pendingCollectionKeys = new Set<string>();
+    const pendingVodRanges = new Map<string, WatchRange[]>();
     const pendingWrites = new Map<string, PendingWrite>();
+    let samplePlayback = () => {};
     let playedBaseline: WatchRange[] = [];
     let provisionalId = globalThis.crypto.randomUUID();
     let recordUnwatchers: (() => void)[] = [];
@@ -210,14 +212,20 @@ export const watchHistoryRuntime = {
         const archiveConfirmed =
           Number.isFinite(snapshot.archiveStartMs) || vodMetadata?.videoId === snapshot.videoId;
 
+        const ranges = mergeWatchRanges([
+          ...(pendingVodRanges.get(snapshot.videoId) ?? []),
+          ...subtractWatchRanges(timeRangesToWatchRanges(snapshot.video.played), playedBaseline),
+        ]);
+
         if (!archiveConfirmed) {
+          if (ranges.length > 0) {
+            pendingVodRanges.set(snapshot.videoId, ranges);
+          }
+
           return undefined;
         }
 
-        const ranges = subtractWatchRanges(
-          timeRangesToWatchRanges(snapshot.video.played),
-          playedBaseline,
-        );
+        pendingVodRanges.delete(snapshot.videoId);
 
         if (ranges.length === 0) {
           return undefined;
@@ -324,6 +332,8 @@ export const watchHistoryRuntime = {
         return;
       }
 
+      samplePlayback();
+
       if (snapshot.video.played.length > 0) {
         pendingCollectionKeys.add(snapshot.key);
       }
@@ -358,6 +368,29 @@ export const watchHistoryRuntime = {
 
     const attachVideo = (snapshot: StreamTimelineSnapshot, excludeCurrentPlayed: boolean) => {
       const controller = new AbortController();
+      const video = snapshot.video;
+      const getPlayingTime = () => {
+        if (!video.paused && !video.seeking) {
+          return video.currentTime;
+        }
+
+        return undefined;
+      };
+      let lastPlayingTime = getPlayingTime();
+
+      samplePlayback = () => {
+        const currentTime = video.currentTime;
+
+        if (!video.seeking && lastPlayingTime !== undefined && currentTime > lastPlayingTime) {
+          // The browser's played ranges cannot distinguish a replay from old viewing.
+          playedBaseline = subtractWatchRanges(playedBaseline, [
+            [Math.round(lastPlayingTime * 1_000), Math.round(currentTime * 1_000)],
+          ]);
+        }
+
+        lastPlayingTime = getPlayingTime();
+      };
+
       const flush = () => queueFlush();
 
       if (excludeCurrentPlayed) {
@@ -372,15 +405,43 @@ export const watchHistoryRuntime = {
       snapshot.video.addEventListener("pause", flush, { signal: controller.signal });
       snapshot.video.addEventListener("seeking", flush, { signal: controller.signal });
 
-      snapshot.video.addEventListener("timeupdate", flushPeriodically, {
-        signal: controller.signal,
-      });
+      snapshot.video.addEventListener(
+        "timeupdate",
+        () => {
+          samplePlayback();
+          flushPeriodically();
+        },
+        { signal: controller.signal },
+      );
+
+      for (const event of ["playing", "seeked"]) {
+        video.addEventListener(
+          event,
+          () => {
+            lastPlayingTime = getPlayingTime();
+          },
+          { signal: controller.signal },
+        );
+      }
+
+      video.addEventListener(
+        "waiting",
+        () => {
+          samplePlayback();
+          lastPlayingTime = undefined;
+        },
+        { signal: controller.signal },
+      );
 
       snapshot.video.addEventListener("durationchange", renderCurrentOverlay, {
         signal: controller.signal,
       });
 
-      detachVideo = () => controller.abort();
+      detachVideo = () => {
+        controller.abort();
+
+        samplePlayback = () => {};
+      };
     };
 
     const loadVodMetadata = async (videoId: string, requestVersion: number) => {
@@ -389,12 +450,29 @@ export const watchHistoryRuntime = {
         videoId,
       });
 
+      if (!isVodWatchMetadata(response) || response.videoId !== videoId) {
+        pendingVodRanges.delete(videoId);
+
+        return;
+      }
+
+      // Persist captured ranges even if this video's UI has already been disposed.
+      const ranges = pendingVodRanges.get(videoId);
+
+      if (ranges) {
+        pendingVodRanges.delete(videoId);
+        const key = `vod:${videoId}`;
+        const write: PendingWrite = { ranges, type: watchHistoryMessages.mergeVodRanges, videoId };
+
+        pendingWrites.set(key, mergePendingWrites(pendingWrites.get(key), write));
+        scheduleWriteDrain();
+      }
+
       if (
         cleaned ||
         requestVersion !== metadataRequestVersion ||
         currentSnapshot?.kind !== "vod" ||
-        currentSnapshot.videoId !== videoId ||
-        !isVodWatchMetadata(response)
+        currentSnapshot.videoId !== videoId
       ) {
         return;
       }
