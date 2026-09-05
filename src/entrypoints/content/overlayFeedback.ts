@@ -41,7 +41,7 @@ export const overlayFeedbackRuntime: FeatureRuntime = {
         const label = globalThis.document.createElement("span");
 
         label.style.cssText =
-          "padding:12px 20px;border-radius:10px;background:rgba(0,0,0,.78);color:white;font:600 28px/1.3 system-ui,sans-serif;font-variant-numeric:tabular-nums;";
+          "padding:16px 24px;border:1px solid rgba(152,225,185,.35);border-radius:16px;background:rgba(21,28,26,.94);box-shadow:0 8px 32px rgba(0,0,0,.28);color:#d4f5e2;font:600 24px/1.3 system-ui,sans-serif;letter-spacing:-.5px;font-variant-numeric:tabular-nums;";
 
         overlay.append(label);
         player.append(overlay);

@@ -9,29 +9,28 @@ export type FeatureDefinition = Readonly<{
 export const featureDefinitions = {
   keyboardShortcuts: {
     defaultEnabled: true,
-    description:
-      "Use arrows for 10-second skips, J/L for 30 seconds, and K to pause or play videos.",
-    label: "Use playback shortcuts",
+    description: "Skip 10s with ← / →, 30s with J / L. Press K to play or pause.",
+    label: "Playback shortcuts",
   },
   overlayFeedback: {
     defaultEnabled: true,
-    description: "Show combined skip amounts and play/pause feedback for playback shortcuts.",
-    label: "Show playback feedback",
+    description: "Show skip amounts and play/pause feedback.",
+    label: "Playback feedback",
   },
   streamSync: {
     defaultEnabled: true,
-    description: "Line up live streams you select on Twitch at the same moment.",
-    label: "Keep live streams in sync",
+    description: "Select Sync on live streams to align playback.",
+    label: "Sync live streams",
   },
   streamTime: {
     defaultEnabled: true,
-    description: "See the approximate clock time beside Twitch’s player controls.",
-    label: "Show stream time",
+    description: "Show the approximate broadcast time in your timezone.",
+    label: "Stream clock",
   },
   watchHistory: {
     defaultEnabled: true,
-    description: "Track watched parts in live streams and past broadcasts.",
-    label: "Remember watched sections",
+    description: "Track live and VOD viewing on the VOD timeline.",
+    label: "Watch history",
   },
 } as const satisfies Record<string, FeatureDefinition>;
 

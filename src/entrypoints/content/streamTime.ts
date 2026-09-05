@@ -43,58 +43,53 @@ const VIEWER_COUNT_SELECTOR = '[data-a-target="animated-channel-viewers-count"]'
 const SYNC_STYLE_TEXT = `
 [data-hyper-twitch-stream-sync] {
   appearance: none;
-  align-items: center;
-  background: var(--color-background-button-secondary-default, #e5e5e5);
-  border: 0;
-  border-radius: 9000px;
-  box-sizing: border-box;
-  color: var(--color-text-button-secondary, #1f1f23);
-  cursor: pointer;
   display: inline-flex;
-  flex: 0 0 auto;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  block-size: 32px;
-  inline-size: 56px;
+  align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
+  gap: 6px;
+  min-block-size: 32px;
+  padding: 5px 10px;
+  margin-inline-end: 8px;
+  border: 1px solid var(--color-border-base, #3b3b44);
+  border-radius: 8px;
+  background: var(--color-background-base, #18181b);
+  color: var(--color-text-base, #efeff1);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
   line-height: 20px;
-  margin: 0 8px 0 0;
-  min-inline-size: 56px;
-  padding: 0 12px;
+  cursor: pointer;
   white-space: nowrap;
+  transition: background-color 120ms ease-out;
 }
-
+[data-hyper-twitch-stream-sync]::before {
+  content: "↔";
+  font-size: 16px;
+}
 [data-hyper-twitch-stream-sync]:hover {
-  background: var(--color-background-button-secondary-hover, #d3d3d7);
-  color: var(--color-text-button-secondary, #1f1f23);
+  background: var(--color-background-button-secondary-hover, #34343b);
 }
-
 [data-hyper-twitch-stream-sync]:focus-visible {
-  outline: 2px solid var(--color-border-button-focus, #9147ff);
+  outline: 2px solid #65b98c;
   outline-offset: 2px;
 }
-
-[data-hyper-twitch-stream-sync]:active {
-  background: var(--color-background-button-secondary-active, #c7c7cc);
-  transform: translateY(1px);
-}
-
 [data-hyper-twitch-stream-sync][aria-pressed="true"] {
-  background: var(--color-background-button-brand, #9147ff);
-  color: var(--color-text-button, #fff);
+  background: #98e1b9;
+  border-color: #98e1b9;
+  color: #152c20;
 }
-
 [data-hyper-twitch-stream-sync][aria-pressed="true"]:hover {
-  background: var(--color-background-button-brand-hover, #772ce8);
+  background: #b8efcf;
 }
-
-[data-hyper-twitch-stream-sync][aria-pressed="true"]:active {
-  background: var(--color-background-button-brand-active, #5c16c5);
-}
-
 [data-hyper-twitch-stream-sync][aria-busy="true"] {
-  opacity: 0.8;
+  border-style: dashed;
+  border-color: #176b53;
+}
+[data-hyper-twitch-stream-sync]:active { transform: scale(.96); }
+@media (prefers-reduced-motion: reduce) {
+  [data-hyper-twitch-stream-sync] { transition: none; }
+  [data-hyper-twitch-stream-sync]:active { transform: none; }
 }
 `;
 

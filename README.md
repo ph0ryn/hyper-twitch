@@ -131,9 +131,9 @@ the archive. This does not capture additional playback after history is turned
 off, and pending confirmation does not survive closing or reloading the page.
 
 On a past broadcast, watched sections replace those portions of Twitch's seek
-bar with bright cyan. Direct archive history is combined with matching live
+bar with mint green. Direct archive history is combined with matching live
 history when Twitch's internal metadata identifies the same broadcaster and
-broadcast time. Hover previews use the same cyan outline when the selected
+broadcast time. Hover previews use the same mint outline when the selected
 moment has been watched. Highlights, uploads, and clips are excluded.
 
 History stays in this browser's local extension storage and is not synced or

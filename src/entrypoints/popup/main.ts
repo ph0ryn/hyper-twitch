@@ -9,10 +9,12 @@ type FeatureSetting = ReturnType<typeof getFeatureEnabledSetting>;
 
 const popupDocument = globalThis.document;
 const featureList = popupDocument.querySelector<HTMLElement>("#feature-list");
+const playbackFeatures = popupDocument.querySelector<HTMLElement>("#playback-features");
+const timelineFeatures = popupDocument.querySelector<HTMLElement>("#timeline-features");
 const emptyState = popupDocument.querySelector<HTMLElement>("#empty-state");
 const status = popupDocument.querySelector<HTMLElement>("#status");
 
-if (!featureList || !emptyState || !status) {
+if (!featureList || !playbackFeatures || !timelineFeatures || !emptyState || !status) {
   throw new Error("Popup markup is missing required elements");
 }
 
@@ -24,7 +26,13 @@ emptyState.hidden = entries.length > 0;
 for (const [featureId, definition] of entries) {
   const { checkbox, setting } = createFeatureRow(featureId);
 
-  featureList.append(createFeatureRowElement(featureId, definition, checkbox));
+  let group = timelineFeatures;
+
+  if (featureId === "keyboardShortcuts" || featureId === "overlayFeedback") {
+    group = playbackFeatures;
+  }
+
+  group.append(createFeatureRowElement(featureId, definition, checkbox));
   void loadFeatureValue(checkbox, setting);
 }
 
@@ -88,7 +96,22 @@ function createFeatureRowElement(
   checkbox.setAttribute("aria-describedby", description.id);
   checkbox.setAttribute("aria-labelledby", label.id);
   content.append(label, description);
-  row.append(content, checkbox, visualSwitch);
+  const icons: Record<FeatureId, string> = {
+    keyboardShortcuts: "M4 6h16v12H4z M7 10h1m3 0h1m3 0h1M8 14h8",
+    overlayFeedback: "M4 5h16v12H9l-5 3z M8 9h8m-8 4h5",
+    streamSync: "M4 8h14l-3-3m3 3-3 3M20 16H6l3-3m-3 3 3 3",
+    streamTime: "M12 8v5l3 2 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0",
+    watchHistory: "M4 12a8 8 0 1 1 2 5 M4 5v7h7 M9 13l2 2 5-5",
+  };
+  const icon = popupDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
+  const path = popupDocument.createElementNS("http://www.w3.org/2000/svg", "path");
+
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("class", "feature-icon");
+  icon.setAttribute("aria-hidden", "true");
+  path.setAttribute("d", icons[featureId]);
+  icon.append(path);
+  row.append(icon, content, checkbox, visualSwitch);
 
   return row;
 }

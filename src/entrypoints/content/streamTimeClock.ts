@@ -114,26 +114,12 @@ export function findClockPlacement(kind: PlaybackKind): ClockPlacement | null {
   return { ...sharePlacement, kind };
 }
 
-function styleClock(root: HTMLElement, timer: HTMLElement, kind: PlaybackKind) {
-  root.style.whiteSpace = "nowrap";
+function styleClock(root: HTMLElement, timer: HTMLElement) {
+  root.style.cssText =
+    "display:inline-flex;align-items:center;white-space:nowrap;padding:4px 8px;border-radius:6px;background:var(--color-background-base,#18181b);border:1px solid var(--color-border-base,#3b3b44);color:var(--color-text-base,#efeff1);margin-inline-end:8px;";
 
-  if (kind === "live") {
-    return;
-  }
-
-  for (const element of [root, timer]) {
-    element.style.color = "inherit";
-    element.style.fontFamily = "inherit";
-    element.style.fontSize = "14px";
-    element.style.fontWeight = "400";
-    element.style.lineHeight = "1.4";
-    element.style.whiteSpace = "nowrap";
-  }
-
-  root.style.alignItems = "center";
-  root.style.display = "inline-flex";
-  root.style.marginInlineEnd = "8px";
-  timer.style.fontVariantNumeric = "tabular-nums";
+  timer.style.cssText =
+    "font:500 13px/1.4 ui-monospace,SFMono-Regular,monospace;font-variant-numeric:tabular-nums;white-space:nowrap;color:inherit;";
 }
 
 function createTimer(placement: ClockPlacement) {
@@ -209,7 +195,7 @@ export function ensureClock(placement: ClockPlacement): ClockElements {
   }
 
   if (created) {
-    styleClock(root, timer, placement.kind);
+    styleClock(root, timer);
   }
 
   return { root, timer, visibleText };

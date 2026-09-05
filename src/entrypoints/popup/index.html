@@ -9,21 +9,36 @@
   <body>
     <main class="popup-shell" id="app">
       <header class="popup-header">
-        <div aria-hidden="true" class="brand-mark">H</div>
-        <div>
-          <h1>Hyper Twitch</h1>
-          <p class="tagline">A better player, on your terms.</p>
+        <div class="brand">
+          <span aria-hidden="true" class="brand-mark">h<span>t</span></span
+          ><span>Hyper Twitch</span>
         </div>
+        <span class="platform">For Twitch</span>
       </header>
-
-      <section aria-label="Feature settings" class="features" id="features">
-        <div class="feature-list" id="feature-list"></div>
-        <div class="empty-state" id="empty-state">
-          <h3>No enhancements available</h3>
+      <div class="intro">
+        <h1>Playback, your way.</h1>
+        <p class="tagline">Small adjustments for a better watch.</p>
+      </div>
+      <div class="features" id="feature-list">
+        <section aria-labelledby="playback-heading" class="feature-group">
+          <div class="section-heading">
+            <h2 id="playback-heading">Playback</h2>
+            <span>Keys &amp; feedback</span>
+          </div>
+          <div id="playback-features"></div>
+        </section>
+        <section aria-labelledby="timeline-heading" class="feature-group">
+          <div class="section-heading">
+            <h2 id="timeline-heading">Timeline</h2>
+            <span>Time &amp; progress</span>
+          </div>
+          <div id="timeline-features"></div>
+        </section>
+        <div class="empty-state" id="empty-state" hidden>
+          <h2>No enhancements available</h2>
           <p>New controls will appear here when they are ready.</p>
         </div>
-      </section>
-
+      </div>
       <footer class="popup-footer">
         <span aria-hidden="true" class="status-dot"></span>
         <p class="status" id="status" role="status">Changes apply instantly in this browser.</p>

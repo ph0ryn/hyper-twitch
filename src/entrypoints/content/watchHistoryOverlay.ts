@@ -12,7 +12,7 @@ const PREVIEW_INDICATOR_SELECTOR = "[data-hyper-twitch-watch-history-preview]";
 const PREVIEW_WRAPPER_SELECTOR = ".vod-seekbar-preview-overlay__wrapper";
 const SEEK_BAR_SELECTOR = '[data-test-selector="seekbar-interaction-area__interactionArea"]';
 const SEEK_BAR_TRACK_SELECTOR = ".seekbar-bar";
-const WATCHED_SEGMENT_COLOR = "#00e5ff";
+const WATCHED_SEGMENT_COLOR = "#98e1b9";
 
 function findSeekBar(video: HTMLVideoElement) {
   const player = video.closest<HTMLElement>('[data-a-target="video-player"]');
@@ -88,7 +88,8 @@ function renderPreviewIndicator(video: HTMLVideoElement, ranges: readonly WatchR
     indicator = globalThis.document.createElement("span");
     indicator.dataset.hyperTwitchWatchHistoryPreview = "";
     indicator.setAttribute("aria-hidden", "true");
-    indicator.style.boxShadow = `inset 0 0 0 3px ${WATCHED_SEGMENT_COLOR}`;
+    indicator.style.boxShadow = `inset 0 0 0 2px ${WATCHED_SEGMENT_COLOR}`;
+    indicator.style.borderRadius = "4px";
     indicator.style.inset = "0";
     indicator.style.pointerEvents = "none";
     indicator.style.position = "absolute";
@@ -149,7 +150,7 @@ export function renderWatchHistoryOverlay(
   }
 
   const segments = watchRangesToOverlay(ranges, durationMs);
-  const renderKey = `cyan-full:${JSON.stringify(segments)}`;
+  const renderKey = `mint-full:${JSON.stringify(segments)}`;
 
   if (overlay.dataset.renderKey === renderKey) {
     return;
