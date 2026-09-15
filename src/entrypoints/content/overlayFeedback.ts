@@ -49,7 +49,7 @@ export const overlayFeedbackRuntime: FeatureRuntime = {
 
       const label = overlay.firstElementChild!;
 
-      if (feedback.kind === "seek") {
+      if (feedback.kind === "seek" || feedback.kind === "mutedSkip") {
         const seconds = Math.round(Math.abs(feedback.seconds) * 10) / 10;
         let sign = "";
 
@@ -63,7 +63,9 @@ export const overlayFeedbackRuntime: FeatureRuntime = {
 
         label.textContent = `${sign}${seconds} s`;
 
-        if (feedback.pending) {
+        if (feedback.kind === "mutedSkip") {
+          label.textContent = `Skipped muted section · ${sign}${seconds} s`;
+        } else if (feedback.pending) {
           return;
         }
       } else {
@@ -74,7 +76,13 @@ export const overlayFeedbackRuntime: FeatureRuntime = {
         }
       }
 
-      timer = setTimeout(clear, 700);
+      let duration = 700;
+
+      if (feedback.kind === "mutedSkip") {
+        duration = 2000;
+      }
+
+      timer = setTimeout(clear, duration);
     });
     const cleanup = () => {
       unsubscribe();

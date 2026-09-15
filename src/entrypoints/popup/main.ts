@@ -28,7 +28,11 @@ for (const [featureId, definition] of entries) {
 
   let group = timelineFeatures;
 
-  if (featureId === "keyboardShortcuts" || featureId === "overlayFeedback") {
+  if (
+    featureId === "keyboardShortcuts" ||
+    featureId === "overlayFeedback" ||
+    featureId === "skipMutedSegments"
+  ) {
     group = playbackFeatures;
   }
 
@@ -99,6 +103,7 @@ function createFeatureRowElement(
   const icons: Record<FeatureId, string> = {
     keyboardShortcuts: "M4 6h16v12H4z M7 10h1m3 0h1m3 0h1M8 14h8",
     overlayFeedback: "M4 5h16v12H9l-5 3z M8 9h8m-8 4h5",
+    skipMutedSegments: "M5 5l10 7-10 7z M19 5v14",
     streamSync: "M4 8h14l-3-3m3 3-3 3M20 16H6l3-3m-3 3 3 3",
     streamTime: "M12 8v5l3 2 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0",
     watchHistory: "M3 12a9 9 0 1 0 9-9c-2.7 0-5.1 1.2-6.7 3L3 8 M3 3v5h5 M12 7v5l4 2",

@@ -1,5 +1,6 @@
 import { browser, storage, type Browser } from "#imports";
 
+import { queryTwitchGql } from "../../utils/twitchGql";
 import {
   isLiveWatchRecord,
   isVodWatchRecord,
@@ -24,8 +25,6 @@ import {
   type VodWatchMetadata,
 } from "../../utils/watchHistory/protocol";
 
-const GQL_ENDPOINT = "https://gql.twitch.tv/gql";
-const TWITCH_WEB_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 const LIVE_METADATA_OPERATION = "HyperTwitchLiveMetadata";
 const LIVE_METADATA_QUERY = `query ${LIVE_METADATA_OPERATION}($login: String!) {
   user(login: $login) {
@@ -49,7 +48,6 @@ const VOD_METADATA_QUERY = `query ${VOD_METADATA_OPERATION}($videoId: ID!) {
     broadcastType
   }
 }`;
-const GQL_TIMEOUT_MS = 5_000;
 const LIVE_METADATA_CACHE_TTL_MS = 60_000;
 
 type Metadata = LiveWatchMetadata | VodWatchMetadata;
@@ -86,34 +84,11 @@ function defaultLiveRecord(login: string, ownerId?: string): LiveWatchRecord {
   return record;
 }
 
-async function queryMetadata(
-  operationName: string,
-  query: string,
-  variables: Record<string, unknown>,
-) {
-  const controller = new AbortController();
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), GQL_TIMEOUT_MS);
-
-  try {
-    return await globalThis.fetch(GQL_ENDPOINT, {
-      body: JSON.stringify({ operationName, query, variables }),
-      cache: "no-store",
-      credentials: "omit",
-      headers: {
-        "Client-ID": TWITCH_WEB_CLIENT_ID,
-        "Content-Type": "application/json",
-      },
-      method: "POST",
-      signal: controller.signal,
-    });
-  } finally {
-    globalThis.clearTimeout(timeoutId);
-  }
-}
-
 async function fetchLiveMetadata(login: string) {
-  const response = await queryMetadata(LIVE_METADATA_OPERATION, LIVE_METADATA_QUERY, {
-    login,
+  const response = await queryTwitchGql({
+    operationName: LIVE_METADATA_OPERATION,
+    query: LIVE_METADATA_QUERY,
+    variables: { login },
   });
 
   if (!response.ok) {
@@ -124,8 +99,10 @@ async function fetchLiveMetadata(login: string) {
 }
 
 async function fetchVodMetadata(videoId: string) {
-  const response = await queryMetadata(VOD_METADATA_OPERATION, VOD_METADATA_QUERY, {
-    videoId,
+  const response = await queryTwitchGql({
+    operationName: VOD_METADATA_OPERATION,
+    query: VOD_METADATA_QUERY,
+    variables: { videoId },
   });
 
   if (!response.ok) {

@@ -14,8 +14,13 @@ export const featureDefinitions = {
   },
   overlayFeedback: {
     defaultEnabled: true,
-    description: "Show skip amounts and play/pause feedback.",
+    description: "Show seek amounts, muted-section skips, and play/pause feedback.",
     label: "Playback feedback",
+  },
+  skipMutedSegments: {
+    defaultEnabled: true,
+    description: "Automatically skip sections Twitch has muted in VODs.",
+    label: "Skip muted sections",
   },
   streamSync: {
     defaultEnabled: true,

@@ -75,6 +75,24 @@ feedback for K. Disabling feedback hides these overlays without changing the
 shortcuts. Disabling shortcuts restores Twitch's native keys; feedback does not
 replace native controls or observe native shortcuts.
 
+## Skip muted sections
+
+Skip muted sections is enabled by default. During VOD playback, entering a
+section Twitch has muted automatically seeks to its end. Touching or overlapping
+muted sections are skipped together. Paused videos stay in place until playback
+resumes. Live streams and clips are excluded; muting the player yourself does
+not trigger a skip.
+
+Each skip briefly shows `Skipped muted section` and the number of seconds skipped.
+The Playback feedback switch controls this overlay independently of automatic
+skipping. Turn off Skip muted sections in the popup to watch those sections.
+
+Muted sections come from the same private Twitch GraphQL metadata used by the
+native seek bar. Failed requests are reported in the console and retried after
+five seconds while the feature is active. Without valid metadata, playback stays
+in place. Disabling the feature or navigating away cancels pending requests and
+retries.
+
 ## Stream time
 
 Stream time shows the approximate wall-clock timestamp of the current live

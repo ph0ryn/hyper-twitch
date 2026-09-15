@@ -1,6 +1,7 @@
 export type PlaybackFeedback =
   | { kind: "clear" }
   | { kind: "seek"; video: HTMLVideoElement; seconds: number; pending: boolean }
+  | { kind: "mutedSkip"; video: HTMLVideoElement; seconds: number }
   | { kind: "playback"; video: HTMLVideoElement; paused: boolean };
 
 const subscribers = new Set<(feedback: PlaybackFeedback) => void>();

@@ -15,17 +15,17 @@ beforeEach(async () => {
   globalThis.document.body.innerHTML = markup;
 });
 
-test("groups all five settings and preserves a saved toggle after reopening", async () => {
+test("groups all six settings and preserves a saved toggle after reopening", async () => {
   await browser.storage.local.set({ "features.streamTime.enabled": false });
   await import("./main");
   const controls = [...globalThis.document.querySelectorAll<HTMLInputElement>('[role="switch"]')];
 
   await vi.waitFor(() => expect(controls.every((control) => !control.disabled)).toBe(true));
-  expect(controls).toHaveLength(5);
+  expect(controls).toHaveLength(6);
 
   expect(
     globalThis.document.querySelector("#playback-features")?.querySelectorAll("input"),
-  ).toHaveLength(2);
+  ).toHaveLength(3);
 
   expect(
     globalThis.document.querySelector("#timeline-features")?.querySelectorAll("input"),
@@ -51,4 +51,35 @@ test("groups all five settings and preserves a saved toggle after reopening", as
       globalThis.document.querySelector<HTMLInputElement>("#feature-streamTime")?.checked,
     ).toBe(true),
   );
+});
+
+test("enables muted-section skipping by default and persists turning it off", async () => {
+  await import("./main");
+  const toggle = globalThis.document.querySelector<HTMLInputElement>("#feature-skipMutedSegments");
+
+  expect(toggle).not.toBeNull();
+  await vi.waitFor(() => expect(toggle!.disabled).toBe(false));
+  expect(toggle!.checked).toBe(true);
+  expect(toggle!.closest("#playback-features")).not.toBeNull();
+  toggle!.click();
+
+  await vi.waitFor(async () => {
+    expect(await browser.storage.local.get("features.skipMutedSegments.enabled")).toEqual({
+      "features.skipMutedSegments.enabled": false,
+    });
+  });
+
+  vi.resetModules();
+  globalThis.document.body.innerHTML = markup;
+  await import("./main");
+
+  await vi.waitFor(() =>
+    expect(
+      globalThis.document.querySelector<HTMLInputElement>("#feature-skipMutedSegments")!.disabled,
+    ).toBe(false),
+  );
+
+  expect(
+    globalThis.document.querySelector<HTMLInputElement>("#feature-skipMutedSegments")!.checked,
+  ).toBe(false);
 });

@@ -1,5 +1,5 @@
 import { findPlaybackMode } from "./playback";
-import { publishPlaybackFeedback } from "./playbackFeedback";
+import { publishPlaybackFeedback, subscribePlaybackFeedback } from "./playbackFeedback";
 
 import type { FeatureRuntime } from "./featureRuntime";
 
@@ -70,6 +70,12 @@ export const keyboardShortcutsRuntime: FeatureRuntime = {
       reset();
       publishPlaybackFeedback({ kind: "clear" });
     };
+    const unsubscribe = subscribePlaybackFeedback((feedback) => {
+      if (feedback.kind === "mutedSkip") {
+        // Cancel the pending seek before the automatic seek's native event arrives.
+        reset();
+      }
+    });
     const commit = () => {
       const batch = pending;
 
@@ -171,6 +177,7 @@ export const keyboardShortcutsRuntime: FeatureRuntime = {
     };
     const cleanup = () => {
       controller.abort();
+      unsubscribe();
       cancel();
       signal.removeEventListener("abort", cleanup);
     };
